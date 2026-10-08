@@ -1,4 +1,56 @@
-.PHONY: vibe-kernel-path vibe-kernel-set vibe-pull
+.PHONY: install install-local build run test lint fmt check version package-release smoke-install release release-push vibe-kernel-path vibe-kernel-set vibe-pull
+
+CARGO_TARGET_DIR ?= $(HOME)/construction_side/fleet-scope/target
+DIST_DIR ?= $(HOME)/construction_side/fleet-scope/dist
+INSTALL_DIR ?= $(HOME)/.x-cli-fleet-scope
+export CARGO_TARGET_DIR
+
+build:
+	cargo build --release --locked
+
+install: install-local
+
+install-local: package-release
+	sh scripts/install.sh --archive "$(DIST_DIR)/fleet-scope-macos-aarch64.tar.gz" --install-dir "$(INSTALL_DIR)"
+
+run:
+	cargo run --locked --
+
+test:
+	cargo test --locked --all-targets
+
+lint:
+	cargo clippy --locked --all-targets -- -D warnings
+
+fmt:
+	cargo fmt --all
+
+check:
+	cargo fmt --all -- --check
+	cargo clippy --locked --all-targets -- -D warnings
+	cargo test --locked --all-targets
+	cargo build --release --locked
+	sh -n scripts/install.sh scripts/package-release.sh scripts/release.sh
+	python3 scripts/check-delivery.py
+
+version:
+	cargo run --locked -- --version
+
+package-release: build
+	sh scripts/package-release.sh "$(CARGO_TARGET_DIR)/release/fleet-scope" "$(DIST_DIR)"
+
+smoke-install: package-release
+	python3 scripts/check-delivery.py --archive "$(DIST_DIR)/fleet-scope-macos-aarch64.tar.gz"
+
+release:
+	sh scripts/release.sh
+
+release-push:
+	@set -eu; \
+	test "$$(git branch --show-current)" = main || { echo "ERROR: release requires main" >&2; exit 1; }; \
+	version="$$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"; \
+	git rev-parse --verify "refs/tags/v$$version" >/dev/null; \
+	git push origin main --follow-tags
 
 vibe-kernel-path:
 	@test -f .vibe/KERNEL_SOURCE || { echo "Missing .vibe/KERNEL_SOURCE. Run: make vibe-kernel-set" >&2; exit 1; }

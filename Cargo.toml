@@ -1,0 +1,23 @@
+[package]
+name = "fleet-scope"
+version = "0.0.0"
+edition = "2024"
+description = "Find live Codex and Claude sessions and jump to their iTerm2 panes"
+license = "MIT"
+repository = "https://github.com/RoTorEx/fleet-scope"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+libc = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ratatui = { version = "0.29", features = ["unstable-rendered-line-info"] }
+crossterm = "0.28"
+toml = "0.8"
+toml_edit = "0.22"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking"] }
+flate2 = "1"
+sha2 = "0.10"
+tar = "0.4"
+signal-hook = "0.3"

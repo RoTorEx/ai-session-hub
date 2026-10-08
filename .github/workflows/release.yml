@@ -1,0 +1,38 @@
+name: Release
+on:
+  push:
+    tags: ["v*.*.*"]
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: macos-15
+    env:
+      CARGO_TARGET_DIR: target
+      DIST_DIR: ${{ runner.temp }}/fleet-scope-dist
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify tag version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          test "$GITHUB_REF_NAME" = "v$version"
+      - run: make check
+      - run: make smoke-install
+      - uses: actions/upload-artifact@v6
+        with:
+          name: fleet-scope-macos-aarch64
+          path: ${{ runner.temp }}/fleet-scope-dist/*
+          if-no-files-found: error
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v7
+        with:
+          name: fleet-scope-macos-aarch64
+          path: release-assets
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" release-assets/* --verify-tag --title "$GITHUB_REF_NAME" --generate-notes --repo "$GITHUB_REPOSITORY"
