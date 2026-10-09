@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-09
+
 - Session-only navigation, simplified project headings and readable gtd-style
   text/selection contrast; permanent version header.
 - Structured status/terminal/latest exchange/history details, read-only selected
