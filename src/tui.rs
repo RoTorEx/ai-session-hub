@@ -1,4 +1,5 @@
 use crate::{
+    activity::{self, Progress, Snapshot},
     config::Config,
     content::{self, Content, Role},
     model::{self, Session, safe_text},
@@ -56,6 +57,9 @@ pub struct App {
     jump_pending: bool,
     last_scan: Option<Instant>,
     last_content: Option<Instant>,
+    last_activity: Option<Instant>,
+    activity_pending: bool,
+    activity: BTreeMap<String, Progress>,
     content: Option<(String, Result<Content, String>)>,
     selected_since: Instant,
     dirty: bool,
@@ -82,6 +86,9 @@ impl App {
             jump_pending: false,
             last_scan: None,
             last_content: None,
+            last_activity: None,
+            activity_pending: false,
+            activity: BTreeMap::new(),
             content: None,
             selected_since: Instant::now(),
             dirty: true,
@@ -155,6 +162,15 @@ impl App {
         let changed = self.sessions != sessions || self.last_scan.is_none() || self.stale;
         if changed {
             self.sessions = sessions;
+            self.activity
+                .retain(|id, _| self.sessions.iter().any(|s| &s.id == id));
+            if self
+                .sessions
+                .iter()
+                .any(|s| !self.activity.contains_key(&s.id))
+            {
+                self.last_activity = None;
+            }
             self.rebuild(key.clone());
             self.dirty = true;
             if self.row_key() != key {
@@ -166,6 +182,22 @@ impl App {
         }
         self.last_scan = Some(Instant::now());
         self.stale = false;
+    }
+    fn observe(&mut self, snapshot: Snapshot) {
+        let before = self.activity.clone();
+        for (id, observed) in snapshot.sessions {
+            if let Some(session) = self.sessions.iter().find(|s| s.id == id) {
+                let focused = session
+                    .location
+                    .as_ref()
+                    .is_some_and(|p| snapshot.focused.as_ref() == Some(&p.id));
+                self.activity
+                    .entry(id)
+                    .or_default()
+                    .observe(observed.as_ref(), focused);
+            }
+        }
+        self.dirty |= self.activity != before;
     }
     fn move_selection(&mut self, delta: isize) {
         let selectable: Vec<_> = self
@@ -190,12 +222,14 @@ impl App {
 enum Request {
     Refresh(bool),
     Content(Box<Session>),
+    Activity(Vec<Session>),
     Stop,
 }
 enum Response {
     Refreshed(Result<Vec<Session>>),
     Content(String, Result<Content>),
-    Jumped(Result<()>),
+    Activity(Result<Snapshot>),
+    Jumped(String, Result<()>),
 }
 struct Worker {
     tx: mpsc::Sender<Request>,
@@ -224,6 +258,9 @@ impl Worker {
                     Request::Content(s) => {
                         Response::Content(s.id.clone(), content::read(&s, &mut collector.terminal))
                     }
+                    Request::Activity(s) => {
+                        Response::Activity(activity::read(&s, &mut collector.terminal))
+                    }
                     Request::Stop => break,
                 };
                 if results.send(response).is_err() {
@@ -240,7 +277,10 @@ impl Worker {
                     break;
                 }
                 if jump_results
-                    .send(Response::Jumped(model::jump_with(&s, &mut terminal)))
+                    .send(Response::Jumped(
+                        s.id.clone(),
+                        model::jump_with(&s, &mut terminal),
+                    ))
                     .is_err()
                 {
                     break;
@@ -331,8 +371,27 @@ pub fn run(config: Config, theme: Theme) -> Result<()> {
                             app.last_content = Some(Instant::now());
                         }
                     }
-                    Response::Jumped(result) => {
+                    Response::Activity(result) => {
+                        app.activity_pending = false;
+                        app.last_activity = Some(Instant::now());
+                        match result {
+                            Ok(snapshot) => app.observe(snapshot),
+                            Err(_) => {
+                                let before = app.activity.clone();
+                                for progress in app.activity.values_mut() {
+                                    progress.observe(None, false);
+                                }
+                                app.dirty |= app.activity != before;
+                            }
+                        }
+                    }
+                    Response::Jumped(id, result) => {
                         app.jump_pending = false;
+                        if result.is_ok()
+                            && let Some(progress) = app.activity.get_mut(&id)
+                        {
+                            progress.acknowledge();
+                        }
                         app.notice = match result {
                             Ok(()) => "Session opened · FleetScope stays here".into(),
                             Err(e) => format!("Jump refused: {e}"),
@@ -356,6 +415,18 @@ pub fn run(config: Config, theme: Theme) -> Result<()> {
                 && worker.tx.send(Request::Content(Box::new(s))).is_ok()
             {
                 app.content_pending = true;
+            }
+            if !app.activity_pending
+                && !app.sessions.is_empty()
+                && app
+                    .last_activity
+                    .is_none_or(|t| t.elapsed() >= Duration::from_secs(config.content_seconds))
+                && worker
+                    .tx
+                    .send(Request::Activity(app.sessions.clone()))
+                    .is_ok()
+            {
+                app.activity_pending = true;
             }
             if app.dirty {
                 terminal.draw(|f| draw(f, &mut app, &theme))?;
@@ -460,6 +531,7 @@ fn key(k: KeyEvent, app: &mut App, worker: &Worker) -> bool {
         KeyCode::Char('r' | 'к') => {
             worker.refresh(app, true);
             app.last_content = None;
+            app.last_activity = None;
         }
         KeyCode::Char('o' | 'щ') | KeyCode::Enter => worker.jump(app),
         KeyCode::Char('e' | 'у') => {
@@ -553,9 +625,12 @@ fn details(app: &App, t: &Theme) -> Vec<Line<'static>> {
         .as_ref()
         .filter(|(id, _)| id == &s.id)
         .map(|(_, c)| c);
-    let state = match content {
-        Some(Ok(c)) => c.state,
-        _ => "Live · activity unknown",
+    let state = match app.activity.get(&s.id) {
+        Some(progress) => progress.explanation(),
+        None => match content {
+            Some(Ok(c)) => c.state,
+            _ => "Live · activity unknown",
+        },
     };
     let mut lines = vec![
         heading("STATUS", t),
@@ -569,6 +644,9 @@ fn details(app: &App, t: &Theme) -> Vec<Line<'static>> {
         Line::default(),
         heading("TERMINAL & SESSION", t),
     ];
+    if let Some(progress) = app.activity.get(&s.id) {
+        lines.insert(2, field("Opening", progress.opening().into(), t));
+    }
     if let Some(p) = &s.location {
         lines.push(field(
             "iTerm2",
@@ -750,9 +828,20 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
             Row::Session(i) => {
                 let s = &app.sessions[*i];
                 let active = selected == Some(row_index);
+                let progress = app.activity.get(&s.id).cloned().unwrap_or_default();
+                let color = match progress.label() {
+                    "Approval" | "Blocked" | "Question" => t.error,
+                    "Working" => t.info,
+                    "Ready" => t.project,
+                    _ => t.status,
+                };
                 ListItem::new(Line::from(vec![
                     Span::styled(
-                        format!("  {:<7} ", s.provider.to_string()),
+                        format!(" {} ", progress.symbol()),
+                        Style::default().fg(if active { t.selected_fg } else { color }),
+                    ),
+                    Span::styled(
+                        format!("{:<7} ", s.provider.to_string()),
                         Style::default().fg(if active { t.selected_fg } else { t.status }),
                     ),
                     Span::styled(
@@ -857,7 +946,7 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
     );
     if app.help {
         f.render_widget(ratatui::widgets::Clear, panes[1]);
-        f.render_widget(Paragraph::new("↑/↓ or j/k: select sessions (headings are skipped)\nEnter/o: open exact existing pane\nTab: switch pane · →: details · ←: sessions\nWheel: scroll the pane under the pointer\nPageUp/PageDown, Home/End: scroll focused pane\ne: expand/collapse long messages\nm: show/hide technical identifiers\n/: search · r: refresh locations and content\n?: close help · q/Ctrl+C: exit\n\nContent comes from the selected terminal's scrollback.\nIt may be incomplete; an input draft is not a sent request.\nFleetScope never types into or controls agents.").block(block(" Help ",true)).wrap(Wrap{trim:false}),panes[1]);
+        f.render_widget(Paragraph::new("↑/↓ or j/k: select sessions (headings are skipped)\nEnter/o: open exact existing pane\nTab: switch pane · →: details · ←: sessions\nWheel: scroll the pane under the pointer\nPageUp/PageDown, Home/End: scroll focused pane\ne: expand/collapse long messages\nm: show/hide technical identifiers\n/: search · r: refresh locations and content\n?: close help · q/Ctrl+C: exit\n\n● Working · ○ Idle · ! Approval\n? Question/action · × Blocked\n◆ New response ready · ✓ Pane opened\n· Activity unknown\nOpening a pane does not prove reading.\nTracking lasts while FleetScope is open.\n\nContent comes from the selected terminal's visible screen.\nIt may be incomplete; an input draft is not a sent request.\nFleetScope never types into or controls agents.").block(block(" Help ",true)).wrap(Wrap{trim:false}),panes[1]);
     }
 }
 #[cfg(test)]
@@ -904,6 +993,52 @@ mod tests {
         assert!(app.selected().is_some());
         app.reconcile(vec![]);
         assert!(app.selected().is_none());
+    }
+    #[test]
+    fn status_symbols_follow_identity_and_selection_does_not_mark_a_response_opened() {
+        use crate::activity::{Attention, Observation, State};
+        let mut app = App::new();
+        app.reconcile(vec![session("a", "/alpha"), session("b", "/alpha")]);
+        let snapshot = |state, answer| Snapshot {
+            sessions: vec![(
+                "a".into(),
+                Some(Observation {
+                    state,
+                    answer,
+                    attention: Attention::None,
+                }),
+            )],
+            focused: None,
+        };
+        app.observe(snapshot(State::Working, None));
+        app.observe(snapshot(State::Idle, Some(1)));
+        assert_eq!(app.activity["a"].symbol(), "◆");
+        app.move_selection(1);
+        app.move_selection(-1);
+        assert_eq!(app.activity["a"].symbol(), "◆");
+        app.dirty = false;
+        app.observe(snapshot(State::Idle, Some(1)));
+        assert!(!app.dirty);
+        let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 25)).unwrap();
+        term.draw(|f| draw(f, &mut app, &crate::theme::get("classic").unwrap()))
+            .unwrap();
+        let buffer = term.backend().buffer();
+        let sidebar = (app.list_area.y..app.list_area.bottom())
+            .map(|y| {
+                (0..app.list_area.right())
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(sidebar.contains("◆ Codex"));
+        assert!(!sidebar.contains("Ready"));
+        app.reconcile(vec![
+            session("b", "/alpha"),
+            session("new-pid-start", "/alpha"),
+        ]);
+        assert!(!app.activity.contains_key("a"));
+        assert!(!app.activity.contains_key("new-pid-start"));
     }
     #[test]
     fn unchanged_refresh_does_not_redraw_or_clear_notices() {

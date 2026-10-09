@@ -27,6 +27,30 @@ function operate(argv) {
                 }
         throw Error('Pane no longer exists');
     }
+    if (argv[0] === 'observe') {
+        const panes=JSON.parse(argv[1]);
+        const texts=panes.map(function(p) {
+            try {
+                let s;
+                try {
+                    s=app.windows.byId(p.window_id).tabs[p.tab_index].sessions.byId(p.id);
+                    // byId is the UUID selector, not an index. Testing TTY also
+                    // forces resolution; moved tabs use the fresh UUID fallback.
+                    if (s.tty() !== p.tty) return null;
+                } catch (_) {
+                    s=resolve(p.id).s;
+                    if (s.tty() !== p.tty) return null;
+                }
+                if (Number(variable(s,'pid')) !== p.root_pid) return null;
+                // Only the currently visible screen, bounded to its final 24
+                // rows; no archived/full conversation reads for status polling.
+                return Array.from(s.contents().split('\n').slice(-24).join('\n')).slice(-8192).join('');
+            } catch (_) { return null; }
+        });
+        let focused=null;
+        try { if (app.frontmost()) focused=app.currentWindow().currentSession().id(); } catch (_) {}
+        return JSON.stringify({texts:texts,focused:focused});
+    }
     if (argv[0] === 'jump' || argv[0] === 'content') {
         const p=resolve(argv[1]), s=p.s;
         if (s.id() !== argv[1] || s.tty() !== argv[2] || String(variable(s,'pid')) !== argv[3])

@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::io::IsTerminal;
+mod activity;
 mod benchmark;
 mod command;
 mod config;

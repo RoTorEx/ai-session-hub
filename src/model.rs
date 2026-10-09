@@ -184,10 +184,14 @@ pub fn jump_with(selected: &Session, terminal: &mut iterm::Client) -> Result<()>
     terminal.jump(validate(selected)?)
 }
 
-fn valid_identity(selected: &Session, pane: &Pane, table: &[Process]) -> bool {
-    process::agents(table)
-        .iter()
-        .any(|p| p.pid == selected.pid && p.started == selected.started && linked(p, pane, table))
+pub(crate) fn valid_identity(selected: &Session, pane: &Pane, table: &[Process]) -> bool {
+    let mut agents = process::agents(table)
+        .into_iter()
+        .filter(|p| linked(p, pane, table));
+    agents
+        .next()
+        .is_some_and(|p| p.pid == selected.pid && p.started == selected.started)
+        && agents.next().is_none()
 }
 #[cfg(test)]
 mod tests {
@@ -238,6 +242,7 @@ mod tests {
         )
         .remove(0);
         assert!(valid_identity(&s, &pane, &table));
+        assert!(!valid_identity(&s, &pane, &[root(), agent(8), agent(9)]));
         let mut reused = p;
         reused.started += 1;
         assert!(!valid_identity(&s, &pane, &[root(), reused]));

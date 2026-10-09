@@ -20,6 +20,11 @@ pub struct Pane {
     pub pane_index: usize,
     pub name: String,
 }
+#[derive(Deserialize)]
+pub struct Observed {
+    pub texts: Vec<Option<String>>,
+    pub focused: Option<String>,
+}
 const SCRIPT: &str = include_str!("iterm.js");
 struct Helper {
     child: Child,
@@ -109,6 +114,11 @@ impl Client {
     }
     pub fn panes(&mut self) -> Result<Vec<Pane>> {
         Ok(serde_json::from_str(&self.call(&["list"])?)?)
+    }
+    pub fn observe(&mut self, panes: &[Pane]) -> Result<Observed> {
+        Ok(serde_json::from_str(
+            &self.call(&["observe", &serde_json::to_string(panes)?])?,
+        )?)
     }
     fn pane_call(&mut self, action: &str, pane: &Pane) -> Result<String> {
         self.call(&[

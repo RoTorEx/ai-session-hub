@@ -132,3 +132,31 @@ directory with a pre-existing config and --no-path-update; version, binary match
 and config preservation passed. The installed TUI rendered v0.1.1 and restored
 screen/mouse modes and cleaned up its helpers on q exit. No user agent was
 controlled or stopped.
+
+
+## Compact activity and opening tracking — 2026-10-09
+
+Local development build (package version 0.1.1, with Unreleased changes) installs
+compact glyphs in the session list; it is distinct from the published v0.1.1
+artifact. Configuration checksum stayed unchanged. The installed controlling
+PTY rendered real activity glyphs, opened/closed the legend, switched to details
+and scrolled; q restored screen/mouse modes and reaped both owned JXA helpers.
+
+make check passes 27 tests, including observed completion/opening, question and
+blocker precedence, excluding previous-turn responses/tool-only output,
+keeping questions after opening, ignoring list selection as acknowledgement,
+removing replaced identities and suppressing unchanged activity redraws.
+The sidebar renderer checks the glyph with no Ready word consuming list space.
+Fresh identity validation also rejects a newly ambiguous shared pane before
+status reads or Jump.
+
+The live read-only status bridge accepted a valid pane and rejected wrong TTY,
+wrong root and missing UUID; its visible-screen output stayed within the bounds
+and its foreground UUID belonged to the current pane inventory. No target pane
+was selected and no agent received input. Ready/opening state transitions and
+question/blocker detection are fixture-tested; a controlled live agent completion
+and manual foreground visit were not induced. Rapid between-poll activity,
+offscreen markers, initial history and actual reading remain uncertain by design.
+Timing samples and their scope are recorded in PERFORMANCE.md. Task-owned build
+and package artifacts are removed after verification; installed development build
+and the user's sessions/config remain.

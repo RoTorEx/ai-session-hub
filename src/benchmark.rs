@@ -1,5 +1,5 @@
 //! Explicit diagnostic command; no Jump unless an exact session ID is supplied.
-use crate::{content, iterm, model, process};
+use crate::{activity, content, iterm, model, process};
 use anyhow::{Result, bail};
 use std::time::Instant;
 fn measure(mut f: impl FnMut() -> Result<()>, samples: usize) -> Result<(f64, f64, f64, f64)> {
@@ -120,6 +120,10 @@ pub fn run(samples: usize, jump: Option<&str>) -> Result<()> {
     })?;
     let mut terminal = iterm::Client::default();
     terminal.warm()?;
+    row("all session status", &mut || {
+        activity::read(&sessions, &mut terminal)?;
+        Ok(())
+    })?;
     let meta = row("iTerm metadata", &mut || {
         terminal.panes()?;
         Ok(())

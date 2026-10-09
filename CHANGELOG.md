@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Add compact session activity symbols, questions/action requests and reported
+  blockers, bounded all-session status polling and in-memory ready/opened
+  response tracking by exact foreground pane or confirmed Jump.
+- Refuse a newly ambiguous shared pane during fresh status/Jump validation.
+
 ## [0.1.1] - 2026-10-09
 
 - Keep concurrent updater temporary directories distinct even when the system

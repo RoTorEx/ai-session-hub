@@ -1,0 +1,352 @@
+//! Observed terminal activity and opening of newly completed responses.
+//! Opening a pane is not proof that its contents were read.
+use crate::{
+    content::{self, Role},
+    iterm,
+    model::{self, Session},
+    process,
+};
+use anyhow::Result;
+use std::hash::{DefaultHasher, Hash, Hasher};
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum State {
+    Working,
+    Idle,
+    Approval,
+    #[default]
+    Unknown,
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Attention {
+    Question,
+    Blocked,
+    #[default]
+    None,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Observation {
+    pub state: State,
+    pub answer: Option<u64>,
+    pub attention: Attention,
+}
+impl Observation {
+    pub fn parse(text: &str, provider: process::Provider) -> Self {
+        let c = content::parse(text, provider);
+        let state = match c.state {
+            "Working" => State::Working,
+            "Waiting for input" => State::Idle,
+            "Needs approval" => State::Approval,
+            _ => State::Unknown,
+        };
+        let message = c
+            .messages
+            .iter()
+            .rev()
+            .take_while(|m| m.role != Role::You)
+            .find(|m| m.role == Role::Agent);
+        let answer = message.map(|m| {
+            let mut h = DefaultHasher::new();
+            m.text.split_whitespace().collect::<Vec<_>>().hash(&mut h);
+            h.finish()
+        });
+        let attention = if state == State::Idle {
+            message.map_or(Attention::None, |m| attention(&m.text))
+        } else {
+            Attention::None
+        };
+        Self {
+            state,
+            answer,
+            attention,
+        }
+    }
+}
+fn attention(text: &str) -> Attention {
+    let text = text.to_lowercase();
+    let tail = text.lines().rev().take(8).collect::<Vec<_>>().join("\n");
+    if [
+        "i am blocked",
+        "i'm blocked",
+        "blocked by",
+        "blocker:",
+        "cannot proceed",
+        "can't proceed",
+        "unable to proceed",
+        "заблокирован",
+        "блокер:",
+        "не могу продолжить",
+    ]
+    .iter()
+    .any(|p| tail.contains(p))
+    {
+        Attention::Blocked
+    } else if [
+        "please provide",
+        "please choose",
+        "please confirm",
+        "please tell me",
+        "waiting for your",
+        "i need your",
+        "уточни, пожалуйста",
+        "подтверди, пожалуйста",
+        "нужен твой",
+        "нужно твоё",
+        "жду от тебя",
+        "пришли, пожалуйста",
+    ]
+    .iter()
+    .any(|p| tail.contains(p))
+        || text
+            .lines()
+            .rev()
+            .find(|line| !line.trim().is_empty())
+            .is_some_and(|line| {
+                let line = line.trim();
+                line.ends_with('?') && !line.starts_with(['>', '`'])
+            })
+    {
+        Attention::Question
+    } else {
+        Attention::None
+    }
+}
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Progress {
+    pub state: State,
+    working: bool,
+    baseline: Option<u64>,
+    last_answer: Option<u64>,
+    ready: bool,
+    opened: bool,
+    attention: Attention,
+}
+impl Progress {
+    pub fn symbol(&self) -> &'static str {
+        match self.label() {
+            "Working" => "●",
+            "Idle" => "○",
+            "Approval" => "!",
+            "Ready" => "◆",
+            "Opened" => "✓",
+            "Question" => "?",
+            "Blocked" => "×",
+            _ => "·",
+        }
+    }
+    pub fn observe(&mut self, observation: Option<&Observation>, focused: bool) {
+        self.state = observation.map_or(State::Unknown, |o| o.state);
+        self.attention = observation.map_or(Attention::None, |o| o.attention);
+        if let Some(o) = observation {
+            if o.state == State::Working && !self.working {
+                self.working = true;
+                self.baseline = self.last_answer;
+                self.ready = false;
+                self.opened = false;
+            } else if o.state == State::Idle && self.working {
+                self.ready = o.answer.is_some() && o.answer != self.baseline;
+                self.working = false;
+            }
+            if self.opened && o.answer != self.last_answer {
+                self.opened = false;
+            }
+            self.last_answer = o.answer;
+        }
+        if self.ready && focused && self.state == State::Idle {
+            self.acknowledge();
+        }
+    }
+    pub fn acknowledge(&mut self) {
+        if self.ready && self.state == State::Idle {
+            self.ready = false;
+            self.opened = true;
+        }
+    }
+    pub fn label(&self) -> &'static str {
+        match self.state {
+            State::Working => "Working",
+            State::Approval => "Approval",
+            State::Unknown => "?",
+            State::Idle if self.attention == Attention::Blocked => "Blocked",
+            State::Idle if self.attention == Attention::Question => "Question",
+            State::Idle if self.ready => "Ready",
+            State::Idle if self.opened => "Opened",
+            State::Idle => "Idle",
+        }
+    }
+    pub fn explanation(&self) -> &'static str {
+        match self.label() {
+            "Ready" => "Idle · new response ready · pane not observed open",
+            "Opened" => "Idle · pane opened after response was ready",
+            "Idle" => "Idle · earlier opening history unknown",
+            "Working" => "Working",
+            "Approval" => "Needs approval",
+            "Question" => "Idle · question or action requested from you",
+            "Blocked" => "Idle · agent reported a blocker",
+            _ => "Live · activity unknown",
+        }
+    }
+    pub fn opening(&self) -> &'static str {
+        if self.ready {
+            "New response · pane not observed open"
+        } else if self.opened {
+            "Pane opened after response was ready · reading unconfirmed"
+        } else {
+            "Earlier opening history unknown"
+        }
+    }
+}
+pub struct Snapshot {
+    pub sessions: Vec<(String, Option<Observation>)>,
+    pub focused: Option<String>,
+}
+pub fn read(sessions: &[Session], terminal: &mut iterm::Client) -> Result<Snapshot> {
+    let table = process::scan()?;
+    let valid: Vec<_> = sessions
+        .iter()
+        .filter(|s| {
+            s.location
+                .as_ref()
+                .is_some_and(|p| model::valid_identity(s, p, &table))
+        })
+        .collect();
+    let panes: Vec<_> = valid.iter().filter_map(|s| s.location.clone()).collect();
+    let observed = terminal.observe(&panes)?;
+    let sessions = sessions
+        .iter()
+        .map(|s| {
+            let text = valid
+                .iter()
+                .position(|v| v.id == s.id)
+                .and_then(|i| observed.texts.get(i))
+                .and_then(|s| s.as_deref());
+            (
+                s.id.clone(),
+                text.map(|text| Observation::parse(text, s.provider)),
+            )
+        })
+        .collect();
+    Ok(Snapshot {
+        sessions,
+        focused: observed.focused,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn o(state: State, answer: Option<u64>) -> Observation {
+        Observation {
+            state,
+            answer,
+            attention: Attention::None,
+        }
+    }
+    #[test]
+    fn only_new_observed_completion_can_be_ready_and_opening_acknowledges_it() {
+        let mut p = Progress::default();
+        p.observe(Some(&o(State::Idle, Some(1))), false);
+        assert_eq!(p.label(), "Idle");
+        p.observe(Some(&o(State::Working, Some(1))), false);
+        p.observe(Some(&o(State::Idle, Some(2))), false);
+        assert_eq!(p.label(), "Ready");
+        p.observe(None, true);
+        assert_eq!(p.label(), "?");
+        p.observe(Some(&o(State::Idle, Some(2))), false);
+        assert_eq!(p.label(), "Ready");
+        p.observe(Some(&o(State::Idle, Some(2))), true);
+        assert_eq!(p.label(), "Opened");
+        p.observe(Some(&o(State::Idle, Some(3))), false);
+        assert_eq!(p.label(), "Idle");
+        p.observe(Some(&o(State::Idle, Some(2))), false);
+        p.observe(Some(&o(State::Working, Some(2))), true);
+        assert_eq!(p.label(), "Working");
+        p.observe(Some(&o(State::Approval, Some(2))), false);
+        assert_eq!(p.label(), "Approval");
+        p.observe(Some(&o(State::Idle, Some(2))), false);
+        assert_eq!(p.label(), "Idle");
+    }
+    #[test]
+    fn parser_requires_provider_state_and_an_agent_response() {
+        let o = Observation::parse(
+            "› task\n• New answer\n› draft\n70% context left",
+            process::Provider::Codex,
+        );
+        assert_eq!(o.state, State::Idle);
+        assert!(o.answer.is_some());
+        let o = Observation::parse(
+            "› task\n• Ran tests\n› draft\n70% context left",
+            process::Provider::Codex,
+        );
+        assert!(o.answer.is_none());
+        let o = Observation::parse(
+            "› old task\n• Which branch?\n› new task\n• Ran tests\n› draft\n70% context left",
+            process::Provider::Codex,
+        );
+        assert_eq!(o.attention, Attention::None);
+        assert!(o.answer.is_none());
+        assert_eq!(
+            Observation::parse("plain output", process::Provider::Claude).state,
+            State::Unknown
+        );
+    }
+    #[test]
+    fn distinguishes_questions_blockers_approval_and_working_from_idle() {
+        assert_eq!(
+            Observation::parse(
+                "❯ Task\n⏺ Please confirm the target branch.\n❯ draft\n? for shortcuts",
+                process::Provider::Claude
+            )
+            .attention,
+            Attention::Question
+        );
+        assert_eq!(
+            Observation::parse(
+                "❯ Task\n⏺ I cannot proceed without access.\n❯ draft\n? for shortcuts",
+                process::Provider::Claude
+            )
+            .attention,
+            Attention::Blocked
+        );
+        for (response, expected) in [
+            ("Which branch should I use?", Attention::Question),
+            (
+                "Please provide the missing credentials.",
+                Attention::Question,
+            ),
+            ("I am blocked by missing access.", Attention::Blocked),
+            ("Не могу продолжить без доступа.", Attention::Blocked),
+            ("Everything is done.", Attention::None),
+            ("What caused it?\nThe bug is fixed now.", Attention::None),
+        ] {
+            let text = format!("› Task\n• {response}\n› draft\n70% context left");
+            assert_eq!(
+                Observation::parse(&text, process::Provider::Codex).attention,
+                expected
+            );
+            let text = format!("{text}\nWorking (esc to interrupt)");
+            assert_eq!(
+                Observation::parse(&text, process::Provider::Codex).attention,
+                Attention::None
+            );
+        }
+        let c = Observation::parse(
+            "Do you want to proceed?\n70% context left",
+            process::Provider::Codex,
+        );
+        assert_eq!(c.state, State::Approval);
+        let mut p = Progress::default();
+        p.observe(Some(&o(State::Working, None)), false);
+        let question = Observation {
+            state: State::Idle,
+            answer: Some(1),
+            attention: Attention::Question,
+        };
+        p.observe(Some(&question), false);
+        assert_eq!(p.symbol(), "?");
+        assert!(p.opening().contains("not observed"));
+        p.observe(Some(&question), true);
+        assert_eq!(p.symbol(), "?");
+        assert!(p.opening().contains("reading unconfirmed"));
+    }
+}
