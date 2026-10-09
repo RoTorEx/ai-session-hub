@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-09
+
 - Add compact session activity symbols, questions/action requests and reported
   blockers, bounded all-session status polling and in-memory ready/opened
   response tracking by exact foreground pane or confirmed Jump.
