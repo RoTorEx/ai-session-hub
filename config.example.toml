@@ -1,2 +1,4 @@
 theme = "classic"
 refresh_seconds = 2
+content_seconds = 5
+metadata_seconds = 30

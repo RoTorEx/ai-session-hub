@@ -5,9 +5,13 @@ use crate::{
 use anyhow::{Result, bail};
 use serde::Serialize;
 use std::os::unix::fs::MetadataExt;
-use std::{collections::HashMap, process::Command, time::Duration};
+use std::{
+    collections::HashMap,
+    process::Command,
+    time::{Duration, Instant},
+};
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Session {
     pub id: String,
     pub pid: u32,
@@ -25,37 +29,93 @@ fn linked(process: &Process, pane: &Pane, table: &[Process]) -> bool {
         && process::descendant(process.pid, pane.root_pid, table)
 }
 
-pub fn collect() -> Result<Vec<Session>> {
-    let table = process::scan()?;
-    let (panes, error) = match iterm::panes() {
-        Ok(p) => (p, None),
-        Err(e) => (vec![], Some(format!("iTerm2 unavailable: {e}"))),
-    };
-    let agents = process::agents(&table);
-    if agents.is_empty()
-        && let Some(e) = error.as_ref()
-    {
-        bail!("{e}");
+pub struct Collector {
+    pub terminal: iterm::Client,
+    panes: Vec<Pane>,
+    error: Option<String>,
+    identities: Vec<(u32, u64)>,
+    last_metadata: Option<Instant>,
+    roots: HashMap<String, String>,
+    metadata_interval: Duration,
+}
+impl Collector {
+    pub fn new(metadata_seconds: u64) -> Self {
+        Self {
+            terminal: iterm::Client::default(),
+            panes: vec![],
+            error: None,
+            identities: vec![],
+            last_metadata: None,
+            roots: HashMap::new(),
+            metadata_interval: Duration::from_secs(metadata_seconds),
+        }
     }
-    let mut roots = HashMap::new();
+    pub fn scan(&mut self, force: bool) -> Result<Vec<Session>> {
+        let table = process::scan()?;
+        let agents = process::agents(&table);
+        let mut ids: Vec<_> = agents.iter().map(|p| (p.pid, p.started)).collect();
+        ids.sort_unstable();
+        if force
+            || ids.iter().any(|id| !self.identities.contains(id))
+            || self
+                .last_metadata
+                .is_none_or(|t| t.elapsed() >= self.metadata_interval)
+        {
+            match self.terminal.panes() {
+                Ok(p) => {
+                    self.panes = p;
+                    self.error = None;
+                }
+                Err(e) => {
+                    self.panes.clear();
+                    self.error = Some(format!("iTerm2 unavailable: {e}"));
+                }
+            }
+            self.last_metadata = Some(Instant::now());
+            self.roots.clear();
+        }
+        self.identities = ids;
+        if agents.is_empty()
+            && let Some(e) = self.error.as_ref()
+        {
+            bail!("{e}");
+        }
+        Ok(assemble(
+            &table,
+            &agents,
+            &self.panes,
+            self.error.as_deref(),
+            &mut self.roots,
+        ))
+    }
+}
+
+pub fn collect() -> Result<Vec<Session>> {
+    Collector::new(30).scan(true)
+}
+
+fn assemble(
+    table: &[Process],
+    agents: &[Process],
+    panes: &[Pane],
+    error: Option<&str>,
+    roots: &mut HashMap<String, String>,
+) -> Vec<Session> {
     let mut sessions = Vec::new();
-    for p in &agents {
-        let matches: Vec<_> = panes
-            .iter()
-            .filter(|pane| linked(p, pane, &table))
-            .collect();
+    for p in agents {
+        let matches: Vec<_> = panes.iter().filter(|pane| linked(p, pane, table)).collect();
         let ambiguous = matches.len() > 1
             || (matches.len() == 1
                 && agents
                     .iter()
-                    .filter(|agent| linked(agent, matches[0], &table))
+                    .filter(|agent| linked(agent, matches[0], table))
                     .count()
                     != 1);
         let location = (matches.len() == 1 && !ambiguous).then(|| matches[0].clone());
         let reason = if location.is_some() {
             None
         } else {
-            Some(error.clone().unwrap_or_else(|| {
+            Some(error.map(str::to_owned).unwrap_or_else(|| {
                 if ambiguous {
                     "Ambiguous pane linkage"
                 } else {
@@ -87,7 +147,7 @@ pub fn collect() -> Result<Vec<Session>> {
         });
     }
     sessions.sort_by(|a, b| (&a.project, a.pid).cmp(&(&b.project, b.pid)));
-    Ok(sessions)
+    sessions
 }
 
 fn project_root(cwd: &str) -> String {
@@ -106,31 +166,95 @@ pub fn safe_text(s: &str) -> String {
         .collect()
 }
 
-pub fn jump(selected: &Session) -> Result<()> {
-    let current = collect()?
-        .into_iter()
-        .find(|s| s.id == selected.id)
-        .ok_or_else(|| anyhow::anyhow!("Session exited; refresh the list"))?;
-    let pane = current.location.as_ref().ok_or_else(|| {
+pub fn validate(selected: &Session) -> Result<&Pane> {
+    let pane = selected.location.as_ref().ok_or_else(|| {
         anyhow::anyhow!(
             "Unlinked: {}",
-            current.link_reason.as_deref().unwrap_or("Unknown pane")
+            selected.link_reason.as_deref().unwrap_or("Unknown pane")
         )
     })?;
-    if selected
-        .location
-        .as_ref()
-        .is_some_and(|old| old.id != pane.id)
-    {
-        bail!("Pane identity changed; refresh before Jump");
-    }
-    // Re-read the process immediately before sending the terminal selection.
     let table = process::scan()?;
-    if !process::agents(&table)
-        .iter()
-        .any(|p| p.pid == current.pid && p.started == current.started && linked(p, pane, &table))
-    {
-        bail!("Session linkage changed before Jump");
+    if !valid_identity(selected, pane, &table) {
+        bail!("Session exited or linkage changed; refresh the list");
     }
-    iterm::jump(pane)
+    Ok(pane)
+}
+
+pub fn jump_with(selected: &Session, terminal: &mut iterm::Client) -> Result<()> {
+    terminal.jump(validate(selected)?)
+}
+
+fn valid_identity(selected: &Session, pane: &Pane, table: &[Process]) -> bool {
+    process::agents(table)
+        .iter()
+        .any(|p| p.pid == selected.pid && p.started == selected.started && linked(p, pane, table))
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn agent(pid: u32) -> Process {
+        let tty = std::fs::metadata("/dev/null").unwrap().rdev() as u32;
+        Process {
+            pid,
+            parent: 7,
+            started: 99,
+            tty,
+            stdin_tty: Some(tty),
+            cwd: None,
+            provider: Some(Provider::Codex),
+            launcher: false,
+        }
+    }
+    fn pane() -> Pane {
+        Pane {
+            id: "uuid".into(),
+            tty: "/dev/null".into(),
+            root_pid: 7,
+            window_id: 1,
+            window: String::new(),
+            tab: String::new(),
+            tab_index: 0,
+            pane_index: 0,
+            name: String::new(),
+        }
+    }
+    fn root() -> Process {
+        let mut p = agent(7);
+        p.parent = 1;
+        p.provider = None;
+        p
+    }
+    #[test]
+    fn fast_jump_rejects_pid_reuse_and_changed_root() {
+        let p = agent(8);
+        let pane = pane();
+        let table = vec![root(), p.clone()];
+        let s = assemble(
+            &table,
+            std::slice::from_ref(&p),
+            std::slice::from_ref(&pane),
+            None,
+            &mut HashMap::new(),
+        )
+        .remove(0);
+        assert!(valid_identity(&s, &pane, &table));
+        let mut reused = p;
+        reused.started += 1;
+        assert!(!valid_identity(&s, &pane, &[root(), reused]));
+        let mut other = pane;
+        other.root_pid = 100;
+        assert!(!valid_identity(&s, &other, &table));
+    }
+    #[test]
+    fn multiple_independent_agents_in_one_pane_remain_unlinked() {
+        let agents = vec![agent(8), agent(9)];
+        let mut table = agents.clone();
+        table.push(root());
+        let sessions = assemble(&table, &agents, &[pane()], None, &mut HashMap::new());
+        assert_eq!(sessions.len(), 2);
+        assert!(
+            sessions.iter().all(|s| s.location.is_none()
+                && s.link_reason.as_deref() == Some("Ambiguous pane linkage"))
+        );
+    }
 }

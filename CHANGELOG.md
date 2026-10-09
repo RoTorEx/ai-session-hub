@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+- Session-only navigation, simplified project headings and readable gtd-style
+  text/selection contrast; permanent version header.
+- Structured status/terminal/latest exchange/history details, read-only selected
+  terminal context, mouse scrolling, message expansion and optional technical IDs.
+- Separate native inventory/content/location timers, cached Git/pane metadata,
+  unchanged-frame suppression and independent fast exact-pane Jump.
+- Reused task-owned iTerm2 helpers with timeout/exit cleanup; explicit local
+  benchmark with CPU timebase conversion and separately observed iTerm2 cost.
+
 - Discover live interactive Codex and Claude processes, including agents waiting
   for input or approval, and distinguish independent instances in one project.
 - Revalidate PID/start time, TTY and pane ancestry before selecting an existing

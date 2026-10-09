@@ -6,5 +6,5 @@
 3. Two-pane TUI, Git grouping, independent scrolling, search and refresh.
 4. Neighbor-compatible install/update/themes/releases, installed-binary checks.
 
-Other providers/terminals, daemon/hooks/tasks/history are deferred. Real release
+Other providers/terminals, daemon/hooks/tasks/archive-wide history search are deferred. Real release
 publishing requires separate approval.

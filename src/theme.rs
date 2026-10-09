@@ -6,13 +6,6 @@ pub const NAMES: [&str; 5] = ["classic", "forest", "sunset", "ocean", "midnight"
 #[derive(Debug, Deserialize)]
 pub struct Theme {
     pub name: String,
-    pub sessions_title: String,
-    pub details_title: String,
-    pub project_icon: String,
-    pub task_icon: String,
-    pub help_separator: String,
-    pub notice_title: String,
-    pub error_title: String,
     #[serde(deserialize_with = "color")]
     pub list_border: Color,
     #[serde(deserialize_with = "color")]
@@ -47,13 +40,17 @@ pub fn get(name: &str) -> Result<Theme> {
         "midnight" => include_str!("../themes/midnight.toml"),
         _ => bail!("Unknown theme: {name}; run fleet-scope themes"),
     };
-    Ok(toml::from_str(text)?)
+    let theme: Theme = toml::from_str(text)?;
+    if theme.name != name {
+        bail!("Bundled theme name mismatch");
+    }
+    Ok(theme)
 }
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
-    fn palettes_and_markers_differ() {
+    fn palettes_differ() {
         for (i, a) in NAMES.iter().enumerate() {
             for b in &NAMES[i + 1..] {
                 let a = get(a).unwrap();
@@ -62,7 +59,6 @@ mod tests {
                     (a.list_border, a.detail_border, a.selected_bg),
                     (b.list_border, b.detail_border, b.selected_bg)
                 );
-                assert_ne!(a.project_icon, b.project_icon);
             }
         }
     }

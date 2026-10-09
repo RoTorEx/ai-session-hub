@@ -1,4 +1,4 @@
-.PHONY: install install-local build run test lint fmt check version package-release smoke-install release release-push vibe-kernel-path vibe-kernel-set vibe-pull
+.PHONY: bench install install-local build run test lint fmt check version package-release smoke-install release release-push vibe-kernel-path vibe-kernel-set vibe-pull
 
 CARGO_TARGET_DIR ?= $(HOME)/construction_side/fleet-scope/target
 DIST_DIR ?= $(HOME)/construction_side/fleet-scope/dist
@@ -12,6 +12,9 @@ install: install-local
 
 install-local: package-release
 	sh scripts/install.sh --archive "$(DIST_DIR)/fleet-scope-macos-aarch64.tar.gz" --install-dir "$(INSTALL_DIR)"
+
+bench: build
+	"$(CARGO_TARGET_DIR)/release/fleet-scope" benchmark --samples 20
 
 run:
 	cargo run --locked --
@@ -32,6 +35,7 @@ check:
 	cargo build --release --locked
 	sh -n scripts/install.sh scripts/package-release.sh scripts/release.sh
 	python3 scripts/check-delivery.py
+	python3 scripts/benchmark-intervals.py --help >/dev/null
 
 version:
 	cargo run --locked -- --version

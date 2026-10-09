@@ -10,12 +10,16 @@ use std::{
 pub struct Config {
     pub theme: String,
     pub refresh_seconds: u64,
+    pub metadata_seconds: u64,
+    pub content_seconds: u64,
 }
 impl Default for Config {
     fn default() -> Self {
         Self {
             theme: "classic".into(),
             refresh_seconds: 2,
+            metadata_seconds: 30,
+            content_seconds: 5,
         }
     }
 }
@@ -39,8 +43,8 @@ pub fn load() -> Result<Config> {
 }
 fn parse(text: &str) -> Result<Config> {
     let c: Config = toml::from_str(text).context("Invalid configuration")?;
-    if c.refresh_seconds == 0 {
-        bail!("refresh_seconds must be positive");
+    if c.refresh_seconds == 0 || c.metadata_seconds == 0 || c.content_seconds == 0 {
+        bail!("refresh_seconds, metadata_seconds and content_seconds must be positive");
     }
     crate::theme::get(&c.theme)?;
     Ok(c)

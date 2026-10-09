@@ -1,8 +1,10 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::io::IsTerminal;
+mod benchmark;
 mod command;
 mod config;
+mod content;
 mod iterm;
 mod model;
 mod process;
@@ -34,6 +36,14 @@ enum Action {
     Jump {
         id: String,
     },
+    /// Measure local discovery/content costs; Jump is opt-in
+    Benchmark {
+        #[arg(long, default_value_t = 10)]
+        samples: usize,
+        /// Also measure selection of this exact live session (changes focus)
+        #[arg(long)]
+        jump: Option<String>,
+    },
     Version,
     /// Install the latest Apple Silicon GitHub Release
     Update,
@@ -63,6 +73,7 @@ fn run() -> Result<()> {
         }
     };
     match action {
+        Action::Benchmark { samples, jump } => benchmark::run(samples, jump.as_deref())?,
         Action::Version => println!("fleet-scope {}", env!("CARGO_PKG_VERSION")),
         Action::Update => update::run()?,
         Action::SetupConfig => config::setup()?,
@@ -105,11 +116,13 @@ fn run() -> Result<()> {
             }
         }
         Action::Jump { id } => {
-            let s = model::collect()?
+            let mut collector = model::Collector::new(30);
+            let s = collector
+                .scan(true)?
                 .into_iter()
                 .find(|s| s.id == id)
                 .ok_or_else(|| anyhow::anyhow!("Session not found"))?;
-            model::jump(&s)?;
+            model::jump_with(&s, &mut collector.terminal)?;
             println!("Selected {}", s.id);
         }
     }

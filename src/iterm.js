@@ -1,33 +1,87 @@
-function run(argv) {
-    const app = Application('/Applications/iTerm.app');
+ObjC.import('Foundation');
+let cachedApp;
+function operate(argv) {
+    const app = cachedApp || (cachedApp = Application('/Applications/iTerm.app'));
+    if (argv[0] === 'ping') return 'ok';
     if (!app.running()) throw Error('iTerm2 is not running');
     function variable(s, name) {
         try { return s.variable({named: name}) || ''; } catch (_) { return ''; }
     }
-    const found = [];
-    for (const w of app.windows()) {
-        const tabs = w.tabs();
-        for (let ti = 0; ti < tabs.length; ti++) {
-            const t = tabs[ti];
-            const sessions = t.sessions();
-            for (let pi = 0; pi < sessions.length; pi++) {
-                const s = sessions[pi];
-                const p = {id:s.id(), tty:s.tty(), root_pid:Number(variable(s,'pid')),
-                    job_pid:Number(variable(s,'jobPid')), window_id:w.id(), window:w.name(),
-                    tab:t.title(), tab_index:ti, pane_index:pi, name:s.name()};
-                if (argv[0] === 'list') found.push(p);
-                else if (p.id === argv[1]) {
-                    if (p.tty !== argv[2] || String(p.root_pid) !== argv[3] || String(p.job_pid) !== argv[4])
-                        throw Error('Pane linkage changed; refresh before Jump');
-                    // Resolve the current containers; never address stale tab indexes.
-                    w.select(); t.select(); s.select(); app.activate();
-                    if (app.currentWindow().currentSession().id() !== p.id)
-                        throw Error('Jump could not be confirmed');
-                    return p.id;
+    function resolve(id) {
+        // Fast path uses the cached containers only to resolve a UUID, never to
+        // select an index. A moved tab falls back to a fresh bulk UUID lookup.
+        if (argv.length >= 7) {
+            try {
+                const w = app.windows.byId(Number(argv[4]));
+                const t = w.tabs[Number(argv[5])];
+                const s = t.sessions.byId(id);
+                if (s.id() === id) return {w:w, t:t, s:s};
+            } catch (_) {}
+        }
+        const ids = app.windows.tabs.sessions.id();
+        for (let wi=0; wi<ids.length; wi++)
+            for (let ti=0; ti<ids[wi].length; ti++)
+                if (ids[wi][ti].indexOf(id) !== -1) {
+                    const w=app.windows[wi], t=w.tabs[ti];
+                    return {w:w,t:t,s:t.sessions.byId(id)};
                 }
+        throw Error('Pane no longer exists');
+    }
+    if (argv[0] === 'jump' || argv[0] === 'content') {
+        const p=resolve(argv[1]), s=p.s;
+        if (s.id() !== argv[1] || s.tty() !== argv[2] || String(variable(s,'pid')) !== argv[3])
+            throw Error('Pane linkage changed; refresh before Jump');
+        if (argv[0] === 'content') {
+            let text=s.contents().slice(-131074);
+            const first=text.charCodeAt(0);
+            if (first >= 0xDC00 && first <= 0xDFFF) text=text.slice(1);
+            return Array.from(text).slice(-65536).join('');
+        }
+        p.w.select(); p.t.select(); s.select(); app.activate();
+        // The front-window state can lag successful selection briefly.
+        // Confirm the UUID within a short bound; never substitute another pane.
+        const deadline=Date.now()+250;
+        while (app.currentWindow().currentSession().id() !== argv[1]) {
+            if (Date.now() >= deadline) throw Error('Jump could not be confirmed');
+            $.NSThread.sleepForTimeInterval(0.01);
+        }
+        return argv[1];
+    }
+    const ids=app.windows.tabs.sessions.id(), ttys=app.windows.tabs.sessions.tty();
+    const names=app.windows.tabs.sessions.name(), titles=app.windows.tabs.title();
+    const wins=app.windows.id(), winNames=app.windows.name();
+    const found=[];
+    for (let wi=0; wi<ids.length; wi++) {
+        for (let ti=0; ti<ids[wi].length; ti++) {
+            for (let pi=0; pi<ids[wi][ti].length; pi++) {
+                const s=app.windows[wi].tabs[ti].sessions.byId(ids[wi][ti][pi]);
+                found.push({id:ids[wi][ti][pi], tty:ttys[wi][ti][pi],
+                    root_pid:Number(variable(s,'pid')),
+                    window_id:wins[wi], window:winNames[wi], tab:titles[wi][ti],
+                    tab_index:ti, pane_index:pi, name:names[wi][ti][pi]});
             }
         }
     }
-    if (argv[0] === 'list') return JSON.stringify(found);
-    throw Error('Pane no longer exists');
+    return JSON.stringify(found);
+}
+
+function run(argv) {
+    if (argv[0] !== 'server') return operate(argv);
+    const input=$.NSFileHandle.fileHandleWithStandardInput;
+    const output=$.NSFileHandle.fileHandleWithStandardOutput;
+    let pending='';
+    while (true) {
+        const data=input.availableData;
+        if (Number(data.length) === 0) break;
+        pending += ObjC.unwrap($.NSString.alloc.initWithDataEncoding(data,$.NSUTF8StringEncoding));
+        let end;
+        while ((end=pending.indexOf('\n')) !== -1) {
+            const line=pending.slice(0,end);pending=pending.slice(end+1);
+            let response;
+            try { response={ok:true,value:operate(JSON.parse(line))}; }
+            catch (e) { cachedApp=null; response={ok:false,error:String(e)}; }
+            output.writeData($.NSString.alloc.initWithUTF8String(JSON.stringify(response)+'\n').dataUsingEncoding($.NSUTF8StringEncoding));
+        }
+    }
+    return '';
 }
