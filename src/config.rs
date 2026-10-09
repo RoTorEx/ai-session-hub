@@ -16,7 +16,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            theme: "classic".into(),
+            theme: "calm".into(),
             refresh_seconds: 2,
             metadata_seconds: 30,
             content_seconds: 5,

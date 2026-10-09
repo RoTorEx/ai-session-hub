@@ -44,29 +44,32 @@ columns, Sessions, Details and History stack vertically; the usable minimum is
 layout; resize, focus and mouse fixtures protect pane boundaries.
 
 Details contains the visible session name and provider/activity, terminal window,
-tab and pane names, full working folder and differing Git root, latest exchange
-previews and process/pane identity. Horizontal ruled headings separate sections.
-The name comes from the observed terminal title, not an invented native chat ID.
-Metadata is always available by scrolling; there is no hidden metadata toggle.
-Status remains a compact symbol in Sessions rather than a separate large block.
-Groups display ~/ for the home directory, ~/child/ for a direct child, otherwise
-…/parent/project/; full paths stay in Details and search.
+tab and pane names, full working folder and differing Git root, and process/pane
+identity. Horizontal ruled headings separate sections. The name comes from the
+observed terminal title. Metadata is always available by scrolling. Latest
+exchange is shown only in History, avoiding duplicated content.
+Groups display the directory basename, or ~ for home. Duplicate basenames include
+the parent directory for distinction; full paths stay in Details and search.
 
-History is separate from Details. Fixed buttons 1 All / 2 Answers / 3 Questions
-filter the available visible terminal messages; All includes action/tool blocks.
-The filter remains pinned while history scrolls. h cycles filters. Right arrow
-shows full retained text, Left restores four-line/280-character previews, e toggles.
-These keys focus History; when all text fits, an explicit notice explains that
-there is nothing to expand. Latest exchange stays a compact preview.
+History shows every available message in chronological order, including action
+blocks. There are no role filters. Each preview shows the first 100 Unicode
+characters, flattened to one paragraph, with an ellipsis for longer messages.
+Navigation selects individual messages (question, answer, or action), not lines.
+e / Enter in History opens the selected full retained message in the right column
+in place of Details. Focus stays in History; subsequent selections update the
+reader. Esc/e restores Details. f focuses the right reader for line scrolling.
+Refresh preserves the selected message when its text persists or grows; if the
+message disappears, the reader closes rather than presenting a different message.
+No guessed message timestamps or additional scans are introduced.
 
-Tab and Shift+Tab cycle Sessions → History → Details. Double borders, a filled
-active title and a footer focus label identify the active pane. Click focuses;
-wheel scrolls the pane under the pointer; ↑/↓ and page keys operate on focus.
-Each text pane has its own scrollbar and scroll position. Help/Quit remain
-visible in the footer. t cycles the existing gtd palettes, persists the choice
-and applies it immediately. The user's initial palette matches their active gtd
-sunset theme; saved theme choices remain independent afterward. Classic retains
-dark selection text for readability in the user's terminal palette.
+Startup focus is Sessions. f / Tab cycles Sessions → History → right pane;
+Shift+Tab cycles backward. The active pane has a muted accent border and a footer
+focus label, with no filled/bold title. Mouse clicks do not change focus; wheel
+operates the pane under the pointer. Arrows/page keys operate on keyboard focus.
+History has a selected-message marker; the right pane has an independent scrollbar.
+Help/Quit remain visible. t cycles palettes and saves the choice immediately.
+The default calm palette uses terminal-default text, neutral separators and a
+muted blue focus accent. Existing gtd palettes remain available as options.
 
 Sova does not rename agent chats, terminal tabs or panes and has no local aliases.
 The user explicitly kept those controls with the agent/terminal; native chat
@@ -138,7 +141,7 @@ Failed scans are distinct from an empty list; prior results are marked stale.
 | 8 | response lines | Explicit request/blocker phrase search tail | Prioritize recent agent requests over older narrative; heuristic parser fixtures |
 | 250 | milliseconds | UUID confirmation window after selection | Observed asynchronous iTerm2 front-window update; 10 ms retry pause, no extra full scan or substituted target |
 | 150 | milliseconds | Selection debounce before content read | Avoid reading every intermediate session while navigating; no delay on Jump |
-| 4 / 280 | lines / characters | Collapsed message preview | User requested readable summaries; expansion and long-scroll tests |
+| 100 | Unicode characters | Collapsed message preview | User requested message-by-message navigation; Unicode, reader and refresh tests |
 | 65,536 / 32 / 8,192 | characters / blocks / characters | Retained terminal history bounds | Bounded display work/memory; tail can omit older history; not full-conversation capture |
 | 5 | seconds | Helper reply deadline | Prevent a stuck API from blocking exit indefinitely; helper failure/reset handling |
 | 0.1.0 | version | First published release | GitHub Release and installed self-update/version checks; docs/VALIDATION.md |
@@ -148,8 +151,8 @@ Local benchmark methodology and limits: docs/PERFORMANCE.md. No fixed interval
 can promise zero load on every machine; measured defaults balance freshness and
 CPU cost, with manual refresh and independently configurable timers.
 Commands follow neighbors: help, version, update, setup-config, themes/theme.
-Themes: classic (default), forest, sunset, ocean, midnight; gtd color families,
-simplified labels. XDG config and SOVA_CONFIG override. Install/update
+Themes: calm (default), classic, forest, sunset, ocean, midnight; independent calm
+palette plus optional gtd color families. XDG config and SOVA_CONFIG override. Install/update
 preserve configuration. Binary: ~/.x-cli-sova/bin. Build cache:
 ~/construction_side/sova. Public release: RoTorEx/sova, Apple Silicon
 macOS only. Release preparation/push are separate; real release needs approval.

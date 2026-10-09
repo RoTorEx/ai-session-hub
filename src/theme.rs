@@ -2,7 +2,7 @@ use anyhow::{Result, bail};
 use ratatui::style::Color;
 use serde::Deserialize;
 
-pub const NAMES: [&str; 5] = ["classic", "forest", "sunset", "ocean", "midnight"];
+pub const NAMES: [&str; 6] = ["calm", "classic", "forest", "sunset", "ocean", "midnight"];
 #[derive(Debug, Deserialize)]
 pub struct Theme {
     pub name: String,
@@ -33,6 +33,7 @@ fn color<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Color, D
 }
 pub fn get(name: &str) -> Result<Theme> {
     let text = match name {
+        "calm" => include_str!("../themes/calm.toml"),
         "classic" => include_str!("../themes/classic.toml"),
         "forest" => include_str!("../themes/forest.toml"),
         "sunset" => include_str!("../themes/sunset.toml"),
