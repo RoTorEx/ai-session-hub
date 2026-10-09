@@ -116,5 +116,19 @@ A final repeated check exposed a temporary-directory name collision: macOS
 returned the same timestamp to two updater fixtures. Names now combine process
 identity, timestamp and an atomic per-process sequence. A concurrency regression
 creates 256 live directories in 16 threads, checks independence and cleanup on
-drop; make check passes all 23 tests. This fix and the workflow repair are queued
-for the 0.1.1 patch; the published 0.1.0 tag remains unchanged.
+drop; make check passes all 23 tests. This fix and the workflow repair shipped
+in the 0.1.1 patch; the published 0.1.0 tag remains unchanged.
+
+The ordinary tag-push workflow published
+[v0.1.1](https://github.com/RoTorEx/fleet-scope/releases/tag/v0.1.1) from
+3587162860f31af1fcc1b2ac9db7f46c00bf5313; both jobs in
+[run 37939561696](https://github.com/RoTorEx/fleet-scope/actions/runs/37939561696)
+succeeded, including all 23 tests and both delivery checks. Downloaded and
+verified the three assets. Actual installed self-update replaced 0.1.0 with
+0.1.1; all three version commands, a repeat Already up to date, unchanged
+original config checksum and byte-for-byte published/installed binary match
+were checked. The published installer was also executed in an isolated install
+directory with a pre-existing config and --no-path-update; version, binary match
+and config preservation passed. The installed TUI rendered v0.1.1 and restored
+screen/mouse modes and cleaned up its helpers on q exit. No user agent was
+controlled or stopped.
