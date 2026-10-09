@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-09
+
 - Rename the CLI, repository, release assets, installation and configuration
   paths to Sova (`sova`); retain the repository history and earlier releases.
 - Preserve existing Sova settings and copy legacy FleetScope settings when
