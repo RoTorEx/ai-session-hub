@@ -390,7 +390,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "fleet-scope"
+name = "sova"
 version = "0.1.2"
 dependencies = [
  "anyhow",

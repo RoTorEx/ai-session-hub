@@ -8,7 +8,7 @@ fail() {
 
 usage() {
     cat <<'EOF'
-Prepare one fleet-scope release.
+Prepare one sova release.
 
 Usage:
   make release
@@ -49,7 +49,7 @@ update_metadata() {
     current="$1"
     target="$2"
     release_date="$(date +%Y-%m-%d)"
-    temp_dir="${TMPDIR:-/tmp}/fleet-scope-release-$$"
+    temp_dir="${TMPDIR:-/tmp}/sova-release-$$"
     mkdir -p "$temp_dir"
 
     grep -qx '## \[Unreleased\]' CHANGELOG.md \
@@ -69,7 +69,7 @@ update_metadata() {
         || fail "could not update Cargo.toml"
 
     awk -v target="$target" '
-        $0 == "name = \"fleet-scope\"" { package = 1 }
+        $0 == "name = \"sova\"" { package = 1 }
         package && !done && /^version = / {
             print "version = \"" target "\""
             done = 1
@@ -108,7 +108,7 @@ case "${1:-}" in
     *) fail "make release does not accept arguments" ;;
 esac
 
-trap 'rm -rf "${TMPDIR:-/tmp}/fleet-scope-release-$$"' EXIT HUP INT TERM
+trap 'rm -rf "${TMPDIR:-/tmp}/sova-release-$$"' EXIT HUP INT TERM
 
 branch="$(git branch --show-current)"
 [ "$branch" = "main" ] || fail "release must run from main, not $branch"

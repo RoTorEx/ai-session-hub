@@ -1,8 +1,8 @@
-# FleetScope
+# Sova
 
 Локальный Rust CLI/TUI для обзора уже запущенных интерактивных Codex и Claude
 в iTerm2 и перехода в точную существующую панель. Обычный запуск агентов не
-меняется. FleetScope ничего не вводит в панели и не управляет процессами агентов.
+меняется. Sova ничего не вводит в панели и не управляет процессами агентов.
 
 ## Установка
 
@@ -11,22 +11,22 @@
 
 ```sh
 make install-local
-fleet-scope
+sova
 ```
 
-Бинарник устанавливается в `~/.x-cli-fleet-scope/bin/fleet-scope`; установщик
+Бинарник устанавливается в `~/.x-cli-sova/bin/sova`; установщик
 добавляет управляемый PATH-блок в `.zshrc` или `.bashrc`. В уже открытом shell:
 
 ```sh
-export PATH="$HOME/.x-cli-fleet-scope/bin:$PATH"
-fleet-scope --version
+export PATH="$HOME/.x-cli-sova/bin:$PATH"
+sova --version
 ```
 
-После публикации первого релиза готовый бинарник можно установить без Rust:
+Готовый бинарник можно установить без Rust:
 
 ```sh
-curl -fsSL https://github.com/RoTorEx/fleet-scope/releases/latest/download/fleet-scope-install.sh | sh
-fleet-scope update
+curl -fsSL https://github.com/RoTorEx/sova/releases/latest/download/sova-install.sh | sh
+sova update
 ```
 
 Установщик и updater проверяют SHA-256 и версию и заменяют бинарник атомарно.
@@ -34,26 +34,41 @@ fleet-scope update
 не удалась, update завершится с ошибкой, сохранив установленный бинарник.
 
 При первом обращении macOS может запросить Automation-доступ к iTerm2. Если
-он запрещён, FleetScope показывает причину отсутствия связи и не делает Jump.
+он запрещён, Sova показывает причину отсутствия связи и не делает Jump.
 Разрешение можно изменить в System Settings → Privacy & Security → Automation
 для приложения, из которого запускается команда. Python API, shell integration,
-hooks и запуск FleetScope до агентов не требуются.
+hooks и запуск Sova до агентов не требуются.
+
+## Переход с FleetScope
+
+Начиная с 0.2.0 команда называется `sova`. Установите её через новый установщик
+выше: старый `fleet-scope update` не выполняет переход между именами пакетов.
+Если конфигурации Sova ещё нет, установщик копирует настройки из
+`~/.config/fleet-scope/config.toml` (с учётом `XDG_CONFIG_HOME`). Существующий
+config Sova и явно заданный `SOVA_CONFIG` имеют приоритет. Старый config остаётся
+на месте до проверки новой установки.
+
+После проверки `sova --version` удалите старый бинарник
+`~/.x-cli-fleet-scope/bin/fleet-scope` и старый блок `# x-cli-fleet-scope` …
+`# /x-cli-fleet-scope` из shell-профиля. В уже открытом shell добавьте новый
+PATH, как показано выше, или откройте новый терминал. Исходники теперь находятся
+в каталоге `sova`; старые теги и релизы сохраняют исходные имена файлов.
 
 ## Команды
 
 ```sh
-fleet-scope                    # двухпанельный обзор
-fleet-scope list                # свежий список и выход
-fleet-scope --plain             # тот же список
-fleet-scope list --json         # массив сессий для скриптов
-fleet-scope jump SESSION_ID     # идентификатор из списка
-fleet-scope version             # также -V / --version
-fleet-scope update
-fleet-scope setup-config        # создать отсутствующий config
-fleet-scope themes
-fleet-scope theme ocean
-fleet-scope benchmark --samples 20 # локальный benchmark, без Jump
-fleet-scope --help
+sova                    # двухпанельный обзор
+sova list                # свежий список и выход
+sova --plain             # тот же список
+sova list --json         # массив сессий для скриптов
+sova jump SESSION_ID     # идентификатор из списка
+sova version             # также -V / --version
+sova update
+sova setup-config        # создать отсутствующий config
+sova themes
+sova theme ocean
+sova benchmark --samples 20 # локальный benchmark, без Jump
+sova --help
 ```
 
 Без интерактивного терминала запуск без аргументов печатает справку.
@@ -103,12 +118,12 @@ ID действителен только пока жив этот экземпл
 он отличается. Выбор и прокрутка сохраняются при обновлении.
 
 После Jump обзор остаётся открытым; вернуться можно обычной навигацией iTerm2.
-После выхода FleetScope ничего не мониторит.
+После выхода Sova ничего не мониторит.
 
 ## Настройки и темы
 
-Config: `$XDG_CONFIG_HOME/fleet-scope/config.toml` либо
-`~/.config/fleet-scope/config.toml`. `FLEETSCOPE_CONFIG` переопределяет путь.
+Config: `$XDG_CONFIG_HOME/sova/config.toml` либо
+`~/.config/sova/config.toml`. `SOVA_CONFIG` переопределяет путь.
 Отсутствующий файл не препятствует запуску: используются встроенные значения.
 
 ```toml
@@ -128,7 +143,7 @@ metadata_seconds = 30
 
 Обновление не переключает Live/Updating и не перерисовывает неизменившийся экран.
 Подробные измерения и границы CPU-оценки — [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
-Повторить локально: `fleet-scope benchmark --samples 20`. Добавление
+Повторить локально: `sova benchmark --samples 20`. Добавление
 `--jump SESSION_ID` также измеряет реальные переходы и меняет выбранную панель.
 
 Темы: classic, forest, sunset, ocean, midnight. `theme NAME` сохраняет остальные
@@ -151,9 +166,9 @@ metadata_seconds = 30
 Текст запроса/ответа и расшифровка находятся в Details, легенда — в `?` help.
 Вопрос/блокер остаётся отмеченным после открытия панели.
 
-FleetScope отслеживает открытие точной активной панели в foreground iTerm2 или
+Sova отслеживает открытие точной активной панели в foreground iTerm2 или
 успешный Jump. Выделение строки и просмотр Details не считаются открытием.
-Это не подтверждение прочтения. История отслеживается только пока FleetScope
+Это не подтверждение прочтения. История отслеживается только пока Sova
 работает: уже завершённые до запуска ответы, быстрые задачи/посещения между
 сканами и скрытые за пределами экрана маркеры могут остаться неизвестными.
 
@@ -169,7 +184,7 @@ Conversation ID не выдумывается.
 
 В памяти остаётся только хвост снимка (65 536 символов), до 32 блоков по 8192 символа.
 По умолчанию сообщение показывает начало (4 строки / 280 символов), `e` раскрывает
-сохранённую часть. Это не полный архив переписки. FleetScope не сохраняет и не
+сохранённую часть. Это не полный архив переписки. Sova не сохраняет и не
 отправляет контент наружу; чтение не влияет на безопасность идентификации Jump.
 
 Поддерживаются локальные обычные панели iTerm2 и интерактивные Codex/Claude.
@@ -206,7 +221,7 @@ make release-push   # отдельная отправка ветки и annotate
 `make release` обновляет Cargo.toml/Cargo.lock/CHANGELOG.md и создаёт release
 commit и тег, но ничего не публикует. Отправка тега запускает GitHub Actions:
 сборка Apple Silicon, smoke-install, архив + checksum + установщик, GitHub Release.
-Цель — публичный `RoTorEx/fleet-scope`; версия берётся из Cargo.toml и проверяется
+Цель — публичный `RoTorEx/sova`; версия берётся из Cargo.toml и проверяется
 против тега. Выпуск требует отдельного одобрения.
 
 Перед первым выпуском или изменением workflow проверьте его через `actionlint
@@ -218,15 +233,15 @@ workflow на main и запустите `gh workflow run release.yml --ref main
 Ручной запуск собирает именно существующий тег и проверяет его версию и commit;
 переписывать тег не нужно. Обычные следующие выпуски запускаются отправкой тега.
 
-Сборки хранятся в `~/construction_side/fleet-scope/target`, упаковка — в `dist`
+Сборки хранятся в `~/construction_side/sova/target`, упаковка — в `dist`
 рядом. Эти каталоги можно удалить: исходники, установленный бинарник и конфигурация
 от них не зависят. Повторная сборка создаст их заново.
 
 ## Удаление
 
-Удалите `~/.x-cli-fleet-scope` и управляемый блок между `# x-cli-fleet-scope`
-и `# /x-cli-fleet-scope` из shell-профиля. При необходимости отдельно удалите
-выбранный config и `~/construction_side/fleet-scope`. Агентные процессы и их
+Удалите `~/.x-cli-sova` и управляемый блок между `# x-cli-sova`
+и `# /x-cli-sova` из shell-профиля. При необходимости отдельно удалите
+выбранный config и `~/construction_side/sova`. Агентные процессы и их
 данные не затрагиваются.
 
 Продуктовые правила — BUSINESS.md; локальные агентные инструкции — AGENTS.md;

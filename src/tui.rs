@@ -393,7 +393,7 @@ pub fn run(config: Config, theme: Theme) -> Result<()> {
                             progress.acknowledge();
                         }
                         app.notice = match result {
-                            Ok(()) => "Session opened · FleetScope stays here".into(),
+                            Ok(()) => "Session opened · Sova stays here".into(),
                             Err(e) => format!("Jump refused: {e}"),
                         };
                         app.dirty = true;
@@ -762,7 +762,7 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
     if area.width < 50 || area.height < 10 {
         f.render_widget(
             Paragraph::new(format!(
-                "FleetScope v{} · resize to 50 × 10 · q exit",
+                "Sova v{} · resize to 50 × 10 · q exit",
                 env!("CARGO_PKG_VERSION")
             )),
             area,
@@ -789,7 +789,7 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
     f.render_widget(
         Paragraph::new(Line::from(vec![
             Span::styled(
-                format!("FleetScope v{}", env!("CARGO_PKG_VERSION")),
+                format!("Sova v{}", env!("CARGO_PKG_VERSION")),
                 Style::default().fg(t.task).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
@@ -946,7 +946,7 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
     );
     if app.help {
         f.render_widget(ratatui::widgets::Clear, panes[1]);
-        f.render_widget(Paragraph::new("↑/↓ or j/k: select sessions (headings are skipped)\nEnter/o: open exact existing pane\nTab: switch pane · →: details · ←: sessions\nWheel: scroll the pane under the pointer\nPageUp/PageDown, Home/End: scroll focused pane\ne: expand/collapse long messages\nm: show/hide technical identifiers\n/: search · r: refresh locations and content\n?: close help · q/Ctrl+C: exit\n\n● Working · ○ Idle · ! Approval\n? Question/action · × Blocked\n◆ New response ready · ✓ Pane opened\n· Activity unknown\nOpening a pane does not prove reading.\nTracking lasts while FleetScope is open.\n\nContent comes from the selected terminal's visible screen.\nIt may be incomplete; an input draft is not a sent request.\nFleetScope never types into or controls agents.").block(block(" Help ",true)).wrap(Wrap{trim:false}),panes[1]);
+        f.render_widget(Paragraph::new("↑/↓ or j/k: select sessions (headings are skipped)\nEnter/o: open exact existing pane\nTab: switch pane · →: details · ←: sessions\nWheel: scroll the pane under the pointer\nPageUp/PageDown, Home/End: scroll focused pane\ne: expand/collapse long messages\nm: show/hide technical identifiers\n/: search · r: refresh locations and content\n?: close help · q/Ctrl+C: exit\n\n● Working · ○ Idle · ! Approval\n? Question/action · × Blocked\n◆ New response ready · ✓ Pane opened\n· Activity unknown\nOpening a pane does not prove reading.\nTracking lasts while Sova is open.\n\nContent comes from the selected terminal's visible screen.\nIt may be incomplete; an input draft is not a sent request.\nSova never types into or controls agents.").block(block(" Help ",true)).wrap(Wrap{trim:false}),panes[1]);
     }
 }
 #[cfg(test)]
@@ -1071,7 +1071,7 @@ mod tests {
             .map(|c| c.symbol())
             .collect::<String>();
         for expected in [
-            &format!("FleetScope v{}", env!("CARGO_PKG_VERSION")),
+            &format!("Sova v{}", env!("CARGO_PKG_VERSION")),
             "STATUS",
             "TERMINAL & SESSION",
             "LATEST EXCHANGE",

@@ -1,5 +1,7 @@
 # Validation evidence
 
+Historical FleetScope checks below retain their original binary names. The project is now Sova.
+
 ## Stage 1 — 2026-10-09
 
 macOS 26.6.1 arm64, iTerm2 3.7.3. Native libproc + osascript prototype.
@@ -88,10 +90,10 @@ Annotated v0.1.0 points to 2e2470c83d37f0fd25aa7a4385ec7b587386c43d.
 The first push was rejected before any jobs ran: runner.temp was invalid in
 job-level env. The repaired main workflow passed actionlint; its manual existing-
 tag path checked out and verified the unchanged release tag. GitHub Actions run
-[37938769095](https://github.com/RoTorEx/fleet-scope/actions/runs/37938769095)
+[37938769095](https://github.com/RoTorEx/sova/actions/runs/37938769095)
 succeeded on native aarch64-apple-darwin: format, clippy, 22 Rust tests, release
 build, delivery fixtures and smoke-install. The publish job created the public
-[v0.1.0 Release](https://github.com/RoTorEx/fleet-scope/releases/tag/v0.1.0)
+[v0.1.0 Release](https://github.com/RoTorEx/sova/releases/tag/v0.1.0)
 with the arm64 archive, adjacent SHA-256 and installer.
 
 Downloaded published assets, checked SHA-256 and archive members, ran the
@@ -120,9 +122,9 @@ drop; make check passes all 23 tests. This fix and the workflow repair shipped
 in the 0.1.1 patch; the published 0.1.0 tag remains unchanged.
 
 The ordinary tag-push workflow published
-[v0.1.1](https://github.com/RoTorEx/fleet-scope/releases/tag/v0.1.1) from
+[v0.1.1](https://github.com/RoTorEx/sova/releases/tag/v0.1.1) from
 3587162860f31af1fcc1b2ac9db7f46c00bf5313; both jobs in
-[run 37939561696](https://github.com/RoTorEx/fleet-scope/actions/runs/37939561696)
+[run 37939561696](https://github.com/RoTorEx/sova/actions/runs/37939561696)
 succeeded, including all 23 tests and both delivery checks. Downloaded and
 verified the three assets. Actual installed self-update replaced 0.1.0 with
 0.1.1; all three version commands, a repeat Already up to date, unchanged

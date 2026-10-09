@@ -50,7 +50,7 @@ def run(binary, root, seconds, profile, iterm):
             fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
         process = subprocess.Popen([str(binary)], stdin=slave, stdout=slave, stderr=slave,
                                    preexec_fn=attach,
-                                   env={**os.environ, 'TERM': 'xterm-256color', 'FLEETSCOPE_CONFIG': str(config)})
+                                   env={**os.environ, 'TERM': 'xterm-256color', 'SOVA_CONFIG': str(config)})
         owned = [process.pid]
         byte_count = 0
         def drain(duration):
@@ -104,7 +104,7 @@ parser.add_argument('--binary', type=Path, required=True)
 parser.add_argument('--seconds', type=float, default=15)
 args = parser.parse_args()
 assert args.seconds >= 5
-root = Path.home() / 'construction_side/fleet-scope'
+root = Path.home() / 'construction_side/sova'
 root.mkdir(parents=True, exist_ok=True)
 iterm = int(subprocess.check_output(['/usr/bin/pgrep', '-x', 'iTerm2'], text=True).strip())
 for profile in [(1, 1, 1), (2, 2, 2), (5, 5, 5), (2, 5, 30)]:

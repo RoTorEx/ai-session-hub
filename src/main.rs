@@ -75,7 +75,7 @@ fn run() -> Result<()> {
     };
     match action {
         Action::Benchmark { samples, jump } => benchmark::run(samples, jump.as_deref())?,
-        Action::Version => println!("fleet-scope {}", env!("CARGO_PKG_VERSION")),
+        Action::Version => println!("sova {}", env!("CARGO_PKG_VERSION")),
         Action::Update => update::run()?,
         Action::SetupConfig => config::setup()?,
         Action::Theme { name } => config::set_theme(&name)?,
@@ -131,7 +131,7 @@ fn run() -> Result<()> {
 }
 fn main() {
     if let Err(e) = run() {
-        eprintln!("fleet-scope: {e:#}");
+        eprintln!("sova: {e:#}");
         std::process::exit(1);
     }
 }
@@ -142,12 +142,12 @@ mod tests {
     #[test]
     fn script_commands_do_not_need_a_terminal_and_plain_conflicts_with_subcommands() {
         for args in [
-            vec!["fleet-scope", "list", "--json"],
-            vec!["fleet-scope", "theme", "ocean"],
-            vec!["fleet-scope", "--plain"],
+            vec!["sova", "list", "--json"],
+            vec!["sova", "theme", "ocean"],
+            vec!["sova", "--plain"],
         ] {
             assert!(Args::try_parse_from(args).is_ok());
         }
-        assert!(Args::try_parse_from(["fleet-scope", "--plain", "list"]).is_err());
+        assert!(Args::try_parse_from(["sova", "--plain", "list"]).is_err());
     }
 }

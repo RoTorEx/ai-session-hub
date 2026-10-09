@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Rename the CLI, repository, release assets, installation and configuration
+  paths to Sova (`sova`); retain the repository history and earlier releases.
+- Preserve existing Sova settings and copy legacy FleetScope settings when
+  installing into an absent default Sova configuration.
+
 ## [0.1.2] - 2026-10-09
 
 - Add compact session activity symbols, questions/action requests and reported

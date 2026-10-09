@@ -1,10 +1,10 @@
 [package]
-name = "fleet-scope"
+name = "sova"
 version = "0.1.2"
 edition = "2024"
 description = "Find live Codex and Claude sessions and jump to their iTerm2 panes"
 license = "MIT"
-repository = "https://github.com/RoTorEx/fleet-scope"
+repository = "https://github.com/RoTorEx/sova"
 
 [dependencies]
 anyhow = "1"

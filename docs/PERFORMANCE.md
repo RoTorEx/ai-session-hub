@@ -1,5 +1,7 @@
 # Локальные измерения — 2026-10-09
 
+Measurements below were recorded before the rename from FleetScope to Sova.
+
 macOS 26.6.1 arm64, iTerm2 3.7.3; живые Codex, другие терминальные задачи
 продолжали работать. Это замеры этой машины, а не гарантия универсального
 «идеального» интервала или нулевой нагрузки.
@@ -11,7 +13,7 @@ macOS 26.6.1 arm64, iTerm2 3.7.3; живые Codex, другие термина�
 перед общим Jump, который снова делал полный сбор. Его задержка не равна одному
 Apple Event. Состав живых процессов менялся по мере работы пользователя.
 
-После изменений, `fleet-scope benchmark --samples 20 --jump SESSION_ID`:
+После изменений, `sova benchmark --samples 20 --jump SESSION_ID`:
 7 агентов. Инвентарь и канал прогреты; Jump измеряет тот же общий путь, который
 использует TUI, без стартовой загрузки CLI/первого полного списка.
 
@@ -78,10 +80,10 @@ RSS — сумма резидентной памяти трёх процессо
 
 ```sh
 make bench
-fleet-scope benchmark --samples 20
+sova benchmark --samples 20
 # Только если намерен действительно выбирать существующую панель:
-fleet-scope benchmark --samples 20 --jump SESSION_ID
-python3 scripts/benchmark-intervals.py --binary ~/.x-cli-fleet-scope/bin/fleet-scope --seconds 15
+sova benchmark --samples 20 --jump SESSION_ID
+python3 scripts/benchmark-intervals.py --binary ~/.x-cli-sova/bin/sova --seconds 15
 ```
 
 Интервальный скрипт закрывает только свои TUI/helper-процессы и временные configs.

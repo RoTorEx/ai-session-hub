@@ -97,13 +97,13 @@ pub fn run(samples: usize, jump: Option<&str>) -> Result<()> {
     let mut collector = model::Collector::new(3600);
     let sessions = collector.scan(true)?;
     println!(
-        "FleetScope {} · {} live sessions · {} samples",
+        "Sova {} · {} live sessions · {} samples",
         env!("CARGO_PKG_VERSION"),
         sessions.len(),
         samples
     );
     println!(
-        "stage\tmedian_ms\tp95_ms\tcpu_ms_per_scan (FleetScope + owned helpers)\titerm_cpu_ms (includes other terminal activity)"
+        "stage\tmedian_ms\tp95_ms\tcpu_ms_per_scan (Sova + owned helpers)\titerm_cpu_ms (includes other terminal activity)"
     );
     let row = |name: &str, f: &mut dyn FnMut() -> Result<()>| -> Result<(f64, f64, f64, f64)> {
         let v = measure(f, samples)?;

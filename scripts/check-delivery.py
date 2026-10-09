@@ -22,19 +22,19 @@ def run(args, *, cwd=None, env=None, input=None, ok=True):
 
 def package(binary, folder):
     run(["sh", str(ROOT / "scripts/package-release.sh"), str(binary), str(folder)], cwd=ROOT)
-    return folder / "fleet-scope-macos-aarch64.tar.gz"
+    return folder / "sova-macos-aarch64.tar.gz"
 
 
 def check_install(archive, scratch):
     install = scratch / "install"
     config = scratch / "config.toml"
-    env = dict(os.environ, FLEETSCOPE_CONFIG=str(config))
+    env = dict(os.environ, SOVA_CONFIG=str(config))
     args = ["sh", str(ROOT / "scripts/install.sh"), "--archive", str(archive),
             "--install-dir", str(install), "--no-path-update"]
     run(args, env=env)
-    binary = install / "bin/fleet-scope"
+    binary = install / "bin/sova"
     before = binary.read_bytes()
-    assert run([str(binary), "--version"]).stdout.startswith("fleet-scope ")
+    assert run([str(binary), "--version"]).stdout.startswith("sova ")
     config.write_text("# keep me\ntheme = 'ocean'\nrefresh_seconds = 3\n")
     run(args, env=env)
     assert config.read_text() == "# keep me\ntheme = 'ocean'\nrefresh_seconds = 3\n"
@@ -52,25 +52,49 @@ def check_install(archive, scratch):
     assert binary.read_bytes() == before
     malicious = scratch / "unexpected.tar.gz"
     with tarfile.open(malicious, "w:gz") as tar:
-        tar.add(binary, arcname="../fleet-scope")
+        tar.add(binary, arcname="../sova")
     Path(str(malicious) + ".sha256").write_text(hashlib.sha256(malicious.read_bytes()).hexdigest())
     run(["sh", str(ROOT / "scripts/install.sh"), "--archive", str(malicious),
          "--install-dir", str(install), "--no-path-update"], env=env, ok=False)
     assert binary.read_bytes() == before
 
 
+def check_config_migration(archive, scratch):
+    home = scratch / "migration-home"
+    config_root = home / "settings"
+    legacy = config_root / "fleet-scope/config.toml"
+    current = config_root / "sova/config.toml"
+    legacy.parent.mkdir(parents=True)
+    original = b"# user settings\ntheme = 'ocean'\nrefresh_seconds = 3\n"
+    legacy.write_bytes(original)
+    env = dict(os.environ, HOME=str(home), XDG_CONFIG_HOME=str(config_root))
+    env.pop("SOVA_CONFIG", None)
+    args = ["sh", str(ROOT / "scripts/install.sh"), "--archive", str(archive),
+            "--install-dir", str(home / "cli"), "--no-path-update"]
+    run(args, env=env)
+    assert current.read_bytes() == legacy.read_bytes() == original
+    current.write_text("# new settings\ntheme = 'forest'\n")
+    run(args, env=env)
+    assert current.read_text() == "# new settings\ntheme = 'forest'\n"
+    assert legacy.read_bytes() == original
+    override = home / "explicit.toml"
+    run(args, env=dict(env, SOVA_CONFIG=str(override)))
+    assert override.read_bytes() == (ROOT / "config.example.toml").read_bytes()
+    assert legacy.read_bytes() == original
+
+
 def check_release(scratch):
     remote = scratch / "remote.git"
     repo = scratch / "release"
     repo.mkdir()
-    env = dict(os.environ, GIT_AUTHOR_NAME="FleetScope checks", GIT_AUTHOR_EMAIL="checks@example.invalid",
-               GIT_COMMITTER_NAME="FleetScope checks", GIT_COMMITTER_EMAIL="checks@example.invalid",
+    env = dict(os.environ, GIT_AUTHOR_NAME="Sova checks", GIT_AUTHOR_EMAIL="checks@example.invalid",
+               GIT_COMMITTER_NAME="Sova checks", GIT_COMMITTER_EMAIL="checks@example.invalid",
                GIT_CONFIG_COUNT="1", GIT_CONFIG_KEY_0="commit.gpgsign", GIT_CONFIG_VALUE_0="false")
     git = lambda *args, ok=True: run(["git", *args], cwd=repo, env=env, ok=ok)
     run(["git", "init", "--bare", "--initial-branch=main", str(remote)], env=env)
     git("init", "--initial-branch=main")
-    (repo / "Cargo.toml").write_text('[package]\nname = "fleet-scope"\nversion = "0.0.0"\n')
-    (repo / "Cargo.lock").write_text('[[package]]\nname = "fleet-scope"\nversion = "0.0.0"\n')
+    (repo / "Cargo.toml").write_text('[package]\nname = "sova"\nversion = "0.0.0"\n')
+    (repo / "Cargo.lock").write_text('[[package]]\nname = "sova"\nversion = "0.0.0"\n')
     (repo / "CHANGELOG.md").write_text("# Changelog\n\n## [Unreleased]\n\n- Test behavior.\n")
     (repo / "Makefile").write_text("check:\n\t@test ! -f fail-check\n")
     shutil.copy(ROOT / "scripts/release.sh", repo / "release.sh")
@@ -106,11 +130,12 @@ def main():
     target.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="delivery-check-", dir=target.parent) as folder:
         scratch = Path(folder)
-        archive = args.archive or package(target / "release/fleet-scope", scratch / "dist")
+        archive = args.archive or package(target / "release/sova", scratch / "dist")
         check_install(archive, scratch)
+        check_config_migration(archive, scratch)
         if not args.archive:
             check_release(scratch)
-    print("Delivery checks passed: install/config preservation, checksum/archive refusal, isolated release flow")
+    print("Delivery checks passed: install/config preservation and legacy migration, checksum/archive refusal, isolated release flow")
 
 
 if __name__ == "__main__":

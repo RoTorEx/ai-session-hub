@@ -1,9 +1,20 @@
-# FleetScope
+# Sova
 
 Personal macOS Rust CLI/TUI for finding already running interactive Codex and
 Claude agents in existing iTerm2 panes and returning to the exact pane. Users
-keep normal launch commands. FleetScope never types into panes or starts,
+keep normal launch commands. Sova never types into panes or starts,
 resumes, stops, or changes agent processes.
+
+## Name and migration
+
+The product is Sova, executable/package/repository `sova`, starting with minor
+0.2.0. Default installation is `~/.x-cli-sova/bin/sova`, configuration is
+`$XDG_CONFIG_HOME/sova/config.toml` (otherwise `~/.config/sova/config.toml`),
+overrides are `SOVA_INSTALL_DIR` and `SOVA_CONFIG`. Earlier FleetScope tags and
+release payloads retain their original identities. The renamed installer copies
+legacy default configuration only when the new default is absent and no explicit
+configuration override was supplied; existing Sova settings always win. Legacy
+binaries and profile blocks can be removed after the new installation is verified.
 
 ## Sessions and navigation
 
@@ -69,7 +80,7 @@ missing markers mean unknown, not idle or successful task completion.
 Opening is observed only when iTerm2 is frontmost and the exact linked pane is
 active at a status sample, or after a successful identity-validated Jump. List
 selection/details previews never acknowledge a result. Opening is not proof of
-reading. State lasts only while FleetScope is open; initial Idle has unknown
+reading. State lasts only while Sova is open; initial Idle has unknown
 opening history. Work/visits entirely between polls and offscreen response
 markers may be missed. Closed/replaced process identities lose their state;
 scan failures show unknown while retaining pending opening history.
@@ -111,9 +122,9 @@ can promise zero load on every machine; measured defaults balance freshness and
 CPU cost, with manual refresh and independently configurable timers.
 Commands follow neighbors: help, version, update, setup-config, themes/theme.
 Themes: classic (default), forest, sunset, ocean, midnight; gtd color families,
-simplified labels. XDG config and FLEETSCOPE_CONFIG override. Install/update
-preserve configuration. Binary: ~/.x-cli-fleet-scope/bin. Build cache:
-~/construction_side/fleet-scope. Public release: RoTorEx/fleet-scope, Apple Silicon
+simplified labels. XDG config and SOVA_CONFIG override. Install/update
+preserve configuration. Binary: ~/.x-cli-sova/bin. Build cache:
+~/construction_side/sova. Public release: RoTorEx/sova, Apple Silicon
 macOS only. Release preparation/push are separate; real release needs approval.
 
 ## Non-goals
