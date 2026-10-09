@@ -162,3 +162,40 @@ offscreen markers, initial history and actual reading remain uncertain by design
 Timing samples and their scope are recorded in PERFORMANCE.md. Task-owned build
 and package artifacts are removed after verification; installed development build
 and the user's sessions/config remain.
+
+
+## Sova rename and minor release — 2026-10-09
+
+Renamed the existing repository to RoTorEx/sova, preserving repository ID
+R_kgDOVBsRLA, prior history, tags and releases. Annotated v0.2.0 points to
+9681e579d854baec6f42ddc3ea3bf766e685fa0a. Native Apple Silicon build and publish
+both succeeded in [run 37950947956](https://github.com/RoTorEx/sova/actions/runs/37950947956).
+The workflow passed actionlint preflight; make check passed 27 Rust tests and
+isolated delivery checks, including default legacy config migration, existing
+Sova settings precedence and explicit config overrides. Smoke-install passed.
+
+Downloaded the three [published v0.2.0 assets](https://github.com/RoTorEx/sova/releases/tag/v0.2.0).
+Verified the archive checksum and exact four regular-file entries. Installed
+through the published installer into ~/.x-cli-sova/bin/sova; installed bytes
+match the published payload. --version, -V and version all report sova 0.2.0.
+An isolated pre-release Sova 0.1.2 updated itself to published 0.2.0 through the
+new repository URL; installed update then reported Already up to date. Updated
+bytes match the installed published binary.
+
+The real installed TUI in a controlling PTY displayed Sova v0.2.0, both panes
+and all compact status symbols/help. Quit restored terminal/mouse modes and
+reaped its own terminal helpers. Agent processes were not controlled.
+
+Copied the actual user's legacy config byte-for-byte to ~/.config/sova;
+SHA-256 stayed d7676f346fc407140ac9dd654d63bb3596c418b3e5347d6384eceb807d8789d8.
+After replacement verification, removed the old binary and empty install/config
+directories and only the old managed PATH block. The unrelated shell profile
+bytes were preserved. A fresh interactive zsh resolved the new installed sova,
+reported 0.2.0, and could no longer resolve fleet-scope.
+
+Moved the source directory to ~/Documents/WorkSpace/Development/personal/cli/sova
+and verified the working tree and canonical origin at the new path. Historical
+Desktop input archives and prior release payloads were preserved.
+The installed `sova list --json` subsequently returned eight live sessions, all
+eight linked; it did not select any terminal pane. make check also passed after
+the source-directory move.
