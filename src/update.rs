@@ -209,6 +209,71 @@ impl Drop for UpdateTempDir {
 mod tests {
     use super::*;
 
+    fn archive(entries: &[(&str, tar::EntryType, &[u8])]) -> Vec<u8> {
+        let gzip = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        let mut builder = tar::Builder::new(gzip);
+        for (name, kind, content) in entries {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(content.len() as u64);
+            header.set_mode(0o755);
+            header.set_entry_type(*kind);
+            if kind.is_symlink() {
+                header.set_link_name("outside").unwrap();
+            }
+            header.set_cksum();
+            builder.append_data(&mut header, name, *content).unwrap();
+        }
+        builder.into_inner().unwrap().finish().unwrap()
+    }
+
+    #[test]
+    fn extracts_only_the_exact_binary_without_unpacking_other_paths() {
+        let temp = UpdateTempDir::create().unwrap();
+        let destination = temp.path().join("new-binary");
+        let bytes = archive(&[
+            ("nested/fleet-scope", tar::EntryType::Regular, b"wrong"),
+            ("config.toml", tar::EntryType::Regular, b"unwanted"),
+            (APP_NAME, tar::EntryType::Regular, b"replacement"),
+        ]);
+        extract_binary(&bytes, &destination).unwrap();
+        assert_eq!(fs::read(&destination).unwrap(), b"replacement");
+        assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn rejects_missing_duplicate_and_symlink_binaries() {
+        let temp = UpdateTempDir::create().unwrap();
+        let cases = [
+            archive(&[("nested/fleet-scope", tar::EntryType::Regular, b"wrong")]),
+            archive(&[
+                (APP_NAME, tar::EntryType::Regular, b"first"),
+                (APP_NAME, tar::EntryType::Regular, b"second"),
+            ]),
+            archive(&[(APP_NAME, tar::EntryType::Symlink, b"")]),
+        ];
+        for (index, bytes) in cases.iter().enumerate() {
+            assert!(extract_binary(bytes, &temp.path().join(index.to_string())).is_err());
+        }
+    }
+
+    #[test]
+    fn replacement_preserves_old_binary_on_failure_and_leaves_no_staging_file() {
+        let temp = UpdateTempDir::create().unwrap();
+        let destination = temp.path().join(APP_NAME);
+        let source = temp.path().join("downloaded");
+        fs::write(&destination, b"old").unwrap();
+        assert!(install_binary(&source, &destination).is_err());
+        assert_eq!(fs::read(&destination).unwrap(), b"old");
+        fs::write(&source, b"new").unwrap();
+        install_binary(&source, &destination).unwrap();
+        assert_eq!(fs::read(&destination).unwrap(), b"new");
+        assert_eq!(
+            fs::metadata(&destination).unwrap().permissions().mode() & 0o777,
+            0o755
+        );
+        assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 2);
+    }
+
     #[test]
     fn selects_only_the_published_apple_silicon_asset() {
         assert_eq!(
