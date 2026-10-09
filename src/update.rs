@@ -7,12 +7,14 @@ use std::io::Cursor;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tar::Archive;
 
 const APP_NAME: &str = "fleet-scope";
 const RELEASE_BASE_URL: &str = "https://github.com/RoTorEx/fleet-scope/releases/latest/download";
 const MACOS_AARCH64_ASSET: &str = "fleet-scope-macos-aarch64.tar.gz";
+static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 
 pub fn run() -> Result<()> {
     let asset = release_asset_for(env::consts::OS, env::consts::ARCH).ok_or_else(|| {
@@ -188,7 +190,11 @@ impl UpdateTempDir {
             .duration_since(UNIX_EPOCH)
             .context("system time is before the Unix epoch")?
             .as_nanos();
-        let path = env::temp_dir().join(format!("fleet-scope-update-{suffix}"));
+        let id = NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed);
+        let path = env::temp_dir().join(format!(
+            "fleet-scope-update-{}-{suffix}-{id}",
+            std::process::id()
+        ));
         fs::create_dir(&path)
             .with_context(|| format!("cannot create update directory {}", path.display()))?;
         Ok(Self { path })
@@ -208,6 +214,31 @@ impl Drop for UpdateTempDir {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn concurrent_update_directories_are_independent_and_cleaned_on_drop() {
+        let workers: Vec<_> = (0..16)
+            .map(|_| {
+                std::thread::spawn(|| {
+                    (0..16)
+                        .map(|_| UpdateTempDir::create().unwrap())
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        let directories: Vec<_> = workers
+            .into_iter()
+            .flat_map(|worker| worker.join().unwrap())
+            .collect();
+        let paths: std::collections::HashSet<_> = directories
+            .iter()
+            .map(|dir| dir.path().to_owned())
+            .collect();
+        assert_eq!(paths.len(), directories.len());
+        assert!(paths.iter().all(|path| path.is_dir()));
+        drop(directories);
+        assert!(paths.iter().all(|path| !path.exists()));
+    }
 
     fn archive(entries: &[(&str, tar::EntryType, &[u8])]) -> Vec<u8> {
         let gzip = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());

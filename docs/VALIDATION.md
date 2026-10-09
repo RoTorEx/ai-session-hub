@@ -81,3 +81,40 @@ baseline and reproduction commands are in PERFORMANCE.md. Color interval runs
 closed only their own TUI/helper processes. The temporary terminal emulator,
 benchmark configs (including the aborted PTY fixture), build cache and dist were
 removed after final verification; installed binary/config and user data remain.
+
+## Published release and self-update — 2026-10-09
+
+Annotated v0.1.0 points to 2e2470c83d37f0fd25aa7a4385ec7b587386c43d.
+The first push was rejected before any jobs ran: runner.temp was invalid in
+job-level env. The repaired main workflow passed actionlint; its manual existing-
+tag path checked out and verified the unchanged release tag. GitHub Actions run
+[37938769095](https://github.com/RoTorEx/fleet-scope/actions/runs/37938769095)
+succeeded on native aarch64-apple-darwin: format, clippy, 22 Rust tests, release
+build, delivery fixtures and smoke-install. The publish job created the public
+[v0.1.0 Release](https://github.com/RoTorEx/fleet-scope/releases/tag/v0.1.0)
+with the arm64 archive, adjacent SHA-256 and installer.
+
+Downloaded published assets, checked SHA-256 and archive members, ran the
+published arm64 binary's version command, then ran the previously installed
+0.0.0 binary's actual update command against GitHub. It replaced itself with
+0.1.0. The installed binary matches the downloaded published binary byte for
+byte; the existing configuration checksum is unchanged. Before publication,
+update's 404 failure left the old version intact. After installation, a repeat
+update reported Already up to date. version, -V and --version all report 0.1.0;
+the command resolves through the user's configured shell PATH. setup-config
+preserved the existing file and themes listed the five supported palettes.
+
+The installed no-argument TUI rendered FleetScope v0.1.0 in a controlling PTY.
+q exited with code 0, restored the alternate screen/mouse modes and reaped both
+owned JXA helpers. Updater fixtures also exercise archive entries (missing,
+duplicate, symlink and unrelated paths) and failed/successful atomic replacement.
+The earlier pending published-upgrade gap is closed. Full iTerm2 restart with
+user agents remains untested. Task-owned downloads, backup and build cache are
+removed after verification; installed binary/config and user sessions remain.
+
+A final repeated check exposed a temporary-directory name collision: macOS
+returned the same timestamp to two updater fixtures. Names now combine process
+identity, timestamp and an atomic per-process sequence. A concurrency regression
+creates 256 live directories in 16 threads, checks independence and cleanup on
+drop; make check passes all 23 tests. This fix and the workflow repair are queued
+for the 0.1.1 patch; the published 0.1.0 tag remains unchanged.

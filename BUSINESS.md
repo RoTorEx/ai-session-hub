@@ -72,7 +72,7 @@ Failed scans are distinct from an empty list; prior results are marked stale.
 | 4 / 280 | lines / characters | Collapsed message preview | User requested readable summaries; expansion and long-scroll tests |
 | 65,536 / 32 / 8,192 | characters / blocks / characters | Retained terminal history bounds | Bounded display work/memory; tail can omit older history; not full-conversation capture |
 | 5 | seconds | Helper reply deadline | Prevent a stuck API from blocking exit indefinitely; helper failure/reset handling |
-| 0.1.0 | version | Intended first release | Accepted plan, release/version checks |
+| 0.1.0 | version | First published release | GitHub Release and installed self-update/version checks; docs/VALIDATION.md |
 | 0.0.0 | version | Development base | Neighboring increasing-version release flow |
 
 Local benchmark methodology and limits: docs/PERFORMANCE.md. No fixed interval

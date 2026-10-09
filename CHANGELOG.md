@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Keep concurrent updater temporary directories distinct even when the system
+  clock returns the same timestamp; preserve automatic cleanup.
 - Fix GitHub Actions artifact directory context and allow publication of an
   existing release tag after workflow repair without rewriting the tag.
 
