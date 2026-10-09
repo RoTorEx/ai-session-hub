@@ -70,6 +70,11 @@ pub fn setup() -> Result<()> {
     Ok(())
 }
 pub fn set_theme(name: &str) -> Result<()> {
+    save_theme(name)?;
+    println!("Theme: {name}");
+    Ok(())
+}
+pub fn save_theme(name: &str) -> Result<()> {
     crate::theme::get(name)?;
     let p = path()?;
     let text = if p.exists() {
@@ -95,7 +100,6 @@ pub fn set_theme(name: &str) -> Result<()> {
         let _ = fs::remove_file(&temp);
     }
     result?;
-    println!("Theme: {name}");
     Ok(())
 }
 #[cfg(test)]

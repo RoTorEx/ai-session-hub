@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- Split the view into compact Sessions above filtered History and full-height
+  Details, with a vertical layout for narrow terminals and short parent paths.
+- Add ruled Details sections and visible session names, stronger focus borders,
+  pinned history filters and explicit full-text/preview arrow controls.
+- Apply and save gtd palettes directly with t; expose metadata in Details and
+  explain when there is no longer text to expand.
+
 ## [0.2.0] - 2026-10-09
 
 - Rename the CLI, repository, release assets, installation and configuration

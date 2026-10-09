@@ -36,14 +36,41 @@ by identity and independent details scroll. Unknown paths do not exclude agents.
 
 ## Details and content
 
-Details show status, compact terminal/session metadata, latest request/response
-previews and recent history. Labels and section headings use gtd accents; values
-use normal text. Classic selection uses dark text on blue for contrast with the
-user's iTerm palette. Version stays visible in the header in all normal states.
-Duplicate project/cwd paths are shown once; Git root appears only when different.
-Technical IDs are hidden behind m. Tab toggles focus; mouse wheel scrolls the
-pane under the pointer. A scrollbar and explicit keyboard hint reveal scrolling.
-Long messages use four-line/280-character previews; e expands all messages.
+At widths of at least 90 terminal columns, Sessions and History share the left
+60% column and Details fills the right 40%. Sessions grows with its rows up to
+40% of the left column height, leaving History the remaining space. Below 90
+columns, Sessions, Details and History stack vertically; the usable minimum is
+50 columns by 12 rows. These choices implement the user's compact asymmetric
+layout; resize, focus and mouse fixtures protect pane boundaries.
+
+Details contains the visible session name and provider/activity, terminal window,
+tab and pane names, full working folder and differing Git root, latest exchange
+previews and process/pane identity. Horizontal ruled headings separate sections.
+The name comes from the observed terminal title, not an invented native chat ID.
+Metadata is always available by scrolling; there is no hidden metadata toggle.
+Status remains a compact symbol in Sessions rather than a separate large block.
+Groups display ~/ for the home directory, ~/child/ for a direct child, otherwise
+…/parent/project/; full paths stay in Details and search.
+
+History is separate from Details. Fixed buttons 1 All / 2 Answers / 3 Questions
+filter the available visible terminal messages; All includes action/tool blocks.
+The filter remains pinned while history scrolls. h cycles filters. Right arrow
+shows full retained text, Left restores four-line/280-character previews, e toggles.
+These keys focus History; when all text fits, an explicit notice explains that
+there is nothing to expand. Latest exchange stays a compact preview.
+
+Tab and Shift+Tab cycle Sessions → History → Details. Double borders, a filled
+active title and a footer focus label identify the active pane. Click focuses;
+wheel scrolls the pane under the pointer; ↑/↓ and page keys operate on focus.
+Each text pane has its own scrollbar and scroll position. Help/Quit remain
+visible in the footer. t cycles the existing gtd palettes, persists the choice
+and applies it immediately. The user's initial palette matches their active gtd
+sunset theme; saved theme choices remain independent afterward. Classic retains
+dark selection text for readability in the user's terminal palette.
+
+Sova does not rename agent chats, terminal tabs or panes and has no local aliases.
+The user explicitly kept those controls with the agent/terminal; native chat
+names can be changed inside supported agent CLIs using their /rename command.
 
 Detailed content is read only from the selected, revalidated iTerm2 pane's
 currently visible screen; no archived conversation is guessed by path/title or recency. Codex

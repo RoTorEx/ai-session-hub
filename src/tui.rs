@@ -15,7 +15,7 @@ use crossterm::{
 };
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{
@@ -34,6 +34,52 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Focus {
+    #[default]
+    Sessions,
+    History,
+    Details,
+}
+impl Focus {
+    fn next(self, backwards: bool) -> Self {
+        match (self, backwards) {
+            (Self::Sessions, false) | (Self::Details, true) => Self::History,
+            (Self::History, false) | (Self::Sessions, true) => Self::Details,
+            _ => Self::Sessions,
+        }
+    }
+    fn label(self) -> &'static str {
+        match self {
+            Self::Sessions => "Sessions",
+            Self::History => "History",
+            Self::Details => "Details",
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum HistoryMode {
+    #[default]
+    All,
+    Answers,
+    Questions,
+}
+impl HistoryMode {
+    fn includes(self, role: &Role) -> bool {
+        match self {
+            Self::All => true,
+            Self::Answers => *role == Role::Agent,
+            Self::Questions => *role == Role::You,
+        }
+    }
+    fn next(self) -> Self {
+        match self {
+            Self::All => Self::Answers,
+            Self::Answers => Self::Questions,
+            Self::Questions => Self::All,
+        }
+    }
+}
 #[derive(Clone)]
 enum Row {
     Project(String),
@@ -45,11 +91,13 @@ pub struct App {
     state: ListState,
     filter: String,
     editing: bool,
-    details_focus: bool,
+    focus: Focus,
+    history_scroll: u16,
+    history_mode: HistoryMode,
+    history_area: Rect,
     detail_scroll: u16,
     help: bool,
     expanded: bool,
-    technical: bool,
     notice: String,
     stale: bool,
     busy: bool,
@@ -74,11 +122,13 @@ impl App {
             state: ListState::default(),
             filter: String::new(),
             editing: false,
-            details_focus: false,
+            focus: Focus::Sessions,
+            history_scroll: 0,
+            history_mode: HistoryMode::All,
+            history_area: Rect::default(),
             detail_scroll: 0,
             help: false,
             expanded: false,
-            technical: false,
             notice: "Finding sessions…".into(),
             stale: false,
             busy: false,
@@ -107,6 +157,7 @@ impl App {
     }
     fn selection_changed(&mut self) {
         self.detail_scroll = 0;
+        self.history_scroll = 0;
         self.expanded = false;
         self.selected_since = Instant::now();
         self.last_content = None;
@@ -330,7 +381,7 @@ impl Drop for TerminalGuard {
         ratatui::restore();
     }
 }
-pub fn run(config: Config, theme: Theme) -> Result<()> {
+pub fn run(config: Config, mut theme: Theme) -> Result<()> {
     let terminate = Arc::new(AtomicBool::new(false));
     let mut signals = vec![];
     for sig in [signal_hook::consts::SIGTERM, signal_hook::consts::SIGINT] {
@@ -436,48 +487,12 @@ pub fn run(config: Config, theme: Theme) -> Result<()> {
                 match event::read()? {
                     Event::Key(k) if k.kind == event::KeyEventKind::Press => {
                         app.dirty = true;
-                        if key(k, &mut app, &worker) {
+                        if key(k, &mut app, &worker, &mut theme) {
                             break;
                         }
                     }
                     Event::Resize(_, _) => app.dirty = true,
-                    Event::Mouse(m) => {
-                        let details = app.details_area.contains((m.column, m.row).into());
-                        let list = app.list_area.contains((m.column, m.row).into());
-                        match m.kind {
-                            MouseEventKind::ScrollDown | MouseEventKind::ScrollUp
-                                if details || list =>
-                            {
-                                app.details_focus = details;
-                                let down = m.kind == MouseEventKind::ScrollDown;
-                                if details {
-                                    app.detail_scroll = if down {
-                                        app.detail_scroll.saturating_add(3)
-                                    } else {
-                                        app.detail_scroll.saturating_sub(3)
-                                    };
-                                } else {
-                                    app.move_selection(if down { 1 } else { -1 });
-                                }
-                                app.dirty = true;
-                            }
-                            MouseEventKind::Down(event::MouseButton::Left) if details => {
-                                app.details_focus = true;
-                                app.dirty = true;
-                            }
-                            MouseEventKind::Down(event::MouseButton::Left) if list => {
-                                let row = app.state.offset()
-                                    + m.row.saturating_sub(app.list_area.y + 1) as usize;
-                                if matches!(app.rows.get(row), Some(Row::Session(_))) {
-                                    app.state.select(Some(row));
-                                    app.selection_changed();
-                                }
-                                app.details_focus = false;
-                                app.dirty = true;
-                            }
-                            _ => {}
-                        }
-                    }
+                    Event::Mouse(m) => mouse(m, &mut app),
                     _ => {}
                 }
             }
@@ -489,7 +504,126 @@ pub fn run(config: Config, theme: Theme) -> Result<()> {
     }
     result
 }
-fn key(k: KeyEvent, app: &mut App, worker: &Worker) -> bool {
+fn mouse(m: event::MouseEvent, app: &mut App) {
+    if app.help {
+        return;
+    }
+    let focus = if app.history_area.contains((m.column, m.row).into()) {
+        Some(Focus::History)
+    } else if app.details_area.contains((m.column, m.row).into()) {
+        Some(Focus::Details)
+    } else if app.list_area.contains((m.column, m.row).into()) {
+        Some(Focus::Sessions)
+    } else {
+        None
+    };
+    let Some(focus) = focus else {
+        return;
+    };
+    match m.kind {
+        MouseEventKind::ScrollDown | MouseEventKind::ScrollUp => {
+            app.focus = focus;
+            navigate(
+                app,
+                if m.kind == MouseEventKind::ScrollDown {
+                    3
+                } else {
+                    -3
+                },
+            );
+        }
+        MouseEventKind::Down(event::MouseButton::Left) => {
+            app.focus = focus;
+            if focus == Focus::Sessions
+                && m.row > app.list_area.y
+                && m.row < app.list_area.bottom().saturating_sub(1)
+            {
+                let row = app.state.offset() + m.row.saturating_sub(app.list_area.y + 1) as usize;
+                if matches!(app.rows.get(row), Some(Row::Session(_)))
+                    && app.state.selected() != Some(row)
+                {
+                    app.state.select(Some(row));
+                    app.selection_changed();
+                }
+            }
+            if focus == Focus::History && m.row == app.history_area.y + 1 {
+                let x = m.column.saturating_sub(app.history_area.x + 1);
+                match x {
+                    0..=6 => set_mode(app, HistoryMode::All),
+                    8..=18 => set_mode(app, HistoryMode::Answers),
+                    20..=32 => set_mode(app, HistoryMode::Questions),
+                    _ => {}
+                }
+            }
+        }
+        _ => return,
+    }
+    app.dirty = true;
+}
+fn navigate(app: &mut App, delta: isize) {
+    match app.focus {
+        Focus::Sessions => app.move_selection(delta),
+        Focus::History => {
+            app.history_scroll = app
+                .history_scroll
+                .saturating_add_signed(delta.clamp(i16::MIN as isize, i16::MAX as isize) as i16)
+        }
+        Focus::Details => {
+            app.detail_scroll = app
+                .detail_scroll
+                .saturating_add_signed(delta.clamp(i16::MIN as isize, i16::MAX as isize) as i16)
+        }
+    }
+}
+fn set_mode(app: &mut App, mode: HistoryMode) {
+    app.history_mode = mode;
+    app.history_scroll = 0;
+    app.focus = Focus::History;
+}
+fn selected_content(app: &App) -> Option<&Result<Content, String>> {
+    let id = &app.selected()?.id;
+    app.content
+        .as_ref()
+        .filter(|(key, _)| key == id)
+        .map(|(_, c)| c)
+}
+fn expandable(app: &App) -> bool {
+    match selected_content(app) {
+        Some(Ok(c)) => {
+            let texts: Vec<&str> = if c.messages.is_empty() && app.history_mode == HistoryMode::All
+            {
+                vec![&c.context]
+            } else {
+                c.messages
+                    .iter()
+                    .filter(|m| app.history_mode.includes(&m.role))
+                    .map(|m| m.text.as_str())
+                    .collect()
+            };
+            texts
+                .iter()
+                .any(|text| text.lines().count() > 4 || text.chars().count() > 280)
+        }
+        _ => false,
+    }
+}
+fn expand(app: &mut App, expanded: bool) {
+    app.focus = Focus::History;
+    app.history_scroll = 0;
+    if expandable(app) {
+        app.expanded = expanded;
+        app.notice = if expanded {
+            "History: full available text. Use ↑/↓ or wheel to scroll."
+        } else {
+            "History: message previews. → shows full text."
+        }
+        .into();
+    } else {
+        app.expanded = false;
+        app.notice = "All available text already fits; there is nothing to expand.".into();
+    }
+}
+fn key(k: KeyEvent, app: &mut App, worker: &Worker, theme: &mut Theme) -> bool {
     if k.modifiers.contains(KeyModifiers::CONTROL) && k.code == KeyCode::Char('c') {
         return true;
     }
@@ -525,62 +659,49 @@ fn key(k: KeyEvent, app: &mut App, worker: &Worker) -> bool {
         KeyCode::Char('q' | 'й') | KeyCode::Esc => return true,
         KeyCode::Char('/') => app.editing = true,
         KeyCode::Char('?') => app.help = true,
-        KeyCode::Tab => app.details_focus = !app.details_focus,
-        KeyCode::Right => app.details_focus = true,
-        KeyCode::BackTab | KeyCode::Left => app.details_focus = false,
+        KeyCode::Tab => app.focus = app.focus.next(false),
+        KeyCode::BackTab => app.focus = app.focus.next(true),
+        KeyCode::Right => expand(app, true),
+        KeyCode::Left => expand(app, false),
+        KeyCode::Char('e' | 'у') => expand(app, !app.expanded),
+        KeyCode::Char('h' | 'р') => set_mode(app, app.history_mode.next()),
+        KeyCode::Char('1') => set_mode(app, HistoryMode::All),
+        KeyCode::Char('2') => set_mode(app, HistoryMode::Answers),
+        KeyCode::Char('3') => set_mode(app, HistoryMode::Questions),
+        KeyCode::Char('t' | 'е') => {
+            let index = crate::theme::NAMES
+                .iter()
+                .position(|name| *name == theme.name)
+                .unwrap_or(0);
+            let name = crate::theme::NAMES[(index + 1) % crate::theme::NAMES.len()];
+            match crate::config::save_theme(name).and_then(|()| crate::theme::get(name)) {
+                Ok(next) => {
+                    *theme = next;
+                    app.notice = format!("Theme: {name} · t chooses the next palette");
+                }
+                Err(e) => app.notice = format!("Theme change failed: {e}"),
+            }
+        }
         KeyCode::Char('r' | 'к') => {
             worker.refresh(app, true);
             app.last_content = None;
             app.last_activity = None;
         }
         KeyCode::Char('o' | 'щ') | KeyCode::Enter => worker.jump(app),
-        KeyCode::Char('e' | 'у') => {
-            app.expanded = !app.expanded;
-            app.detail_scroll = 0;
-        }
-        KeyCode::Char('m' | 'ь') => app.technical = !app.technical,
-        KeyCode::Up | KeyCode::Char('k' | 'л') => {
-            if app.details_focus {
-                app.detail_scroll = app.detail_scroll.saturating_sub(1);
-            } else {
-                app.move_selection(-1);
-            }
-        }
-        KeyCode::Down | KeyCode::Char('j' | 'о') => {
-            if app.details_focus {
-                app.detail_scroll = app.detail_scroll.saturating_add(1);
-            } else {
-                app.move_selection(1);
-            }
-        }
-        KeyCode::PageUp => {
-            if app.details_focus {
-                app.detail_scroll = app.detail_scroll.saturating_sub(10);
-            } else {
-                app.move_selection(-10);
-            }
-        }
-        KeyCode::PageDown => {
-            if app.details_focus {
-                app.detail_scroll = app.detail_scroll.saturating_add(10);
-            } else {
-                app.move_selection(10);
-            }
-        }
-        KeyCode::Home => {
-            if app.details_focus {
-                app.detail_scroll = 0;
-            } else {
-                app.move_selection(isize::MIN);
-            }
-        }
-        KeyCode::End => {
-            if app.details_focus {
-                app.detail_scroll = u16::MAX;
-            } else {
-                app.move_selection(isize::MAX);
-            }
-        }
+        KeyCode::Up | KeyCode::Char('k' | 'л') => navigate(app, -1),
+        KeyCode::Down | KeyCode::Char('j' | 'о') => navigate(app, 1),
+        KeyCode::PageUp => navigate(app, -10),
+        KeyCode::PageDown => navigate(app, 10),
+        KeyCode::Home => match app.focus {
+            Focus::Sessions => app.move_selection(isize::MIN),
+            Focus::History => app.history_scroll = 0,
+            Focus::Details => app.detail_scroll = 0,
+        },
+        KeyCode::End => match app.focus {
+            Focus::Sessions => app.move_selection(isize::MAX),
+            Focus::History => app.history_scroll = u16::MAX,
+            Focus::Details => app.detail_scroll = u16::MAX,
+        },
         _ => {}
     }
     false
@@ -606,7 +727,7 @@ fn preview(text: &str, expanded: bool) -> String {
     let truncated = text.lines().count() > 4 || short.chars().count() > 280;
     let short: String = short.chars().take(280).collect();
     if truncated {
-        format!("{short}\n… e to expand")
+        format!("{short}\n… → full text in History")
     } else {
         short
     }
@@ -616,46 +737,38 @@ fn body(lines: &mut Vec<Line<'static>>, text: &str, t: &Theme) {
         lines.push(Line::styled(safe_text(line), Style::default().fg(t.task)));
     }
 }
+fn separator(name: &str, width: u16, t: &Theme) -> Line<'static> {
+    let label = format!("─ {name} ");
+    Line::styled(
+        format!(
+            "{label}{}",
+            "─".repeat((width as usize).saturating_sub(label.chars().count()))
+        ),
+        Style::default().fg(t.label).add_modifier(Modifier::BOLD),
+    )
+}
 fn details(app: &App, t: &Theme) -> Vec<Line<'static>> {
     let Some(s) = app.selected() else {
-        return vec![Line::raw("No matching sessions")];
+        return vec![Line::raw("Select a session to see its details")];
     };
-    let content = app
-        .content
-        .as_ref()
-        .filter(|(id, _)| id == &s.id)
-        .map(|(_, c)| c);
-    let state = match app.activity.get(&s.id) {
-        Some(progress) => progress.explanation(),
-        None => match content {
-            Some(Ok(c)) => c.state,
-            _ => "Live · activity unknown",
-        },
-    };
+    let width = app.details_area.width.saturating_sub(2);
     let mut lines = vec![
-        heading("STATUS", t),
-        Line::from(vec![
-            Span::styled(
-                format!("{}  ", s.provider),
-                Style::default().fg(t.task).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(state, Style::default().fg(t.info)),
-        ]),
-        Line::default(),
-        heading("TERMINAL & SESSION", t),
+        separator("SESSION", width, t),
+        field("Name", session_title(s), t),
+        field("Agent", s.provider.to_string(), t),
     ];
     if let Some(progress) = app.activity.get(&s.id) {
-        lines.insert(2, field("Opening", progress.opening().into(), t));
+        lines.push(field("Activity", progress.explanation().into(), t));
+        lines.push(field("Response", progress.opening().into(), t));
     }
+    lines.push(Line::default());
+    lines.push(separator("TERMINAL", width, t));
     if let Some(p) = &s.location {
+        lines.push(field("Window", p.window.clone(), t));
+        lines.push(field("Tab", format!("{} · {}", p.tab_index + 1, p.tab), t));
         lines.push(field(
-            "iTerm2",
-            format!(
-                "{} · tab {} · pane {}",
-                p.window,
-                p.tab_index + 1,
-                p.pane_index + 1
-            ),
+            "Pane",
+            format!("{} · {}", p.pane_index + 1, p.name),
             t,
         ));
     } else {
@@ -674,63 +787,99 @@ fn details(app: &App, t: &Theme) -> Vec<Line<'static>> {
         lines.push(field("Git root", s.project.clone(), t));
     }
     lines.push(Line::default());
-    lines.push(heading("LATEST EXCHANGE", t));
-    match content {
+    lines.push(separator("LATEST EXCHANGE", width, t));
+    match selected_content(app) {
         Some(Ok(c)) => {
             for role in [Role::You, Role::Agent] {
-                lines.push(field(role.label(), String::new(), t));
+                lines.push(heading(role.label(), t));
                 if let Some(m) = c.messages.iter().rev().find(|m| m.role == role) {
-                    body(&mut lines, &preview(&m.text, app.expanded), t);
+                    body(&mut lines, &preview(&m.text, false), t);
                 } else {
                     lines.push(Line::styled(
-                        "Not visible in terminal history",
+                        "Not in visible snapshot",
                         Style::default().fg(t.status),
                     ));
                 }
                 lines.push(Line::default());
             }
-            lines.push(heading("RECENT HISTORY", t));
-            lines.push(Line::styled(
-                "Read-only terminal snapshot · may be incomplete",
-                Style::default().fg(t.status),
-            ));
-            for m in &c.messages {
+        }
+        Some(Err(e)) => body(&mut lines, &format!("Content unavailable: {e}"), t),
+        None => body(&mut lines, "Reading selected terminal…", t),
+    }
+    lines.push(separator("IDENTITY", width, t));
+    lines.push(field("PID", s.pid.to_string(), t));
+    lines.push(field("Session ID", s.id.clone(), t));
+    if let Some(p) = &s.location {
+        lines.push(field("TTY", p.tty.clone(), t));
+        lines.push(field("Pane UUID", p.id.clone(), t));
+    }
+    lines
+}
+fn compact_path(path: &str) -> String {
+    compact_path_with_home(path, std::env::var("HOME").ok().as_deref())
+}
+fn compact_path_with_home(path: &str, home: Option<&str>) -> String {
+    if home == Some(path) {
+        return "~/".into();
+    }
+    let parts: Vec<_> = std::path::Path::new(path)
+        .components()
+        .filter_map(|p| match p {
+            std::path::Component::Normal(p) => Some(p.to_string_lossy().into_owned()),
+            _ => None,
+        })
+        .collect();
+    if let Some(home) = home
+        && let Some(relative) = path.strip_prefix(&format!("{home}/"))
+        && !relative.is_empty()
+        && !relative.contains('/')
+    {
+        return format!("~/{relative}/");
+    }
+    match parts.as_slice() {
+        [] => path.into(),
+        [name] => format!("/{name}/"),
+        [.., parent, name] => format!("…/{parent}/{name}/"),
+    }
+}
+fn history(app: &App, t: &Theme) -> Vec<Line<'static>> {
+    let Some(_) = app.selected() else {
+        return vec![Line::raw("Select a session to see its history")];
+    };
+    let mut lines = vec![Line::styled(
+        "Visible terminal snapshot · older turns may be absent",
+        Style::default().fg(t.status),
+    )];
+    match selected_content(app) {
+        Some(Ok(c)) => {
+            let messages: Vec<_> = c
+                .messages
+                .iter()
+                .filter(|m| app.history_mode.includes(&m.role))
+                .collect();
+            if messages.is_empty() {
+                if app.history_mode == HistoryMode::All && !c.context.is_empty() {
+                    body(&mut lines, &preview(&c.context, app.expanded), t);
+                } else {
+                    body(
+                        &mut lines,
+                        "No matching messages in the visible snapshot.",
+                        t,
+                    );
+                }
+            }
+            for m in messages {
                 lines.push(Line::default());
-                lines.push(Line::styled(
+                lines.push(separator(
                     m.role.label(),
-                    Style::default()
-                        .fg(if m.role == Role::You {
-                            t.project
-                        } else {
-                            t.label
-                        })
-                        .add_modifier(Modifier::BOLD),
+                    app.history_area.width.saturating_sub(2),
+                    t,
                 ));
                 body(&mut lines, &preview(&m.text, app.expanded), t);
             }
-            if c.messages.is_empty() {
-                body(&mut lines, &preview(&c.context, app.expanded), t);
-            }
         }
         Some(Err(e)) => body(&mut lines, &format!("Content unavailable: {e}"), t),
-        None => lines.push(Line::styled(
-            "Reading selected terminal…",
-            Style::default().fg(t.status),
-        )),
-    }
-    if app.technical {
-        lines.push(Line::default());
-        lines.push(heading("TECHNICAL DETAILS", t));
-        lines.push(field(
-            "Process",
-            format!("{} · started {} µs", s.pid, s.started),
-            t,
-        ));
-        lines.push(field("Session", s.id.clone(), t));
-        if let Some(p) = &s.location {
-            lines.push(field("Pane UUID", p.id.clone(), t));
-            lines.push(field("TTY", p.tty.clone(), t));
-        }
+        None => body(&mut lines, "Reading selected terminal…", t),
     }
     lines
 }
@@ -757,29 +906,86 @@ fn session_title(s: &Session) -> String {
     }
     safe_text(&title)
 }
+fn pane_block(title: &str, focus: Focus, app: &App, t: &Theme) -> Block<'static> {
+    let active = app.focus == focus;
+    Block::default()
+        .title(format!(" {}{title} ", if active { "▶ " } else { "" }))
+        .borders(Borders::ALL)
+        .border_type(if active {
+            BorderType::Double
+        } else {
+            BorderType::Rounded
+        })
+        .border_style(Style::default().fg(if active {
+            if focus == Focus::Details {
+                t.detail_border
+            } else {
+                t.list_border
+            }
+        } else {
+            t.status
+        }))
+        .title_style(if active {
+            Style::default()
+                .bg(t.selected_bg)
+                .fg(t.selected_fg)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(t.status)
+        })
+}
+fn scroll_body(f: &mut Frame, area: Rect, lines: Vec<Line<'static>>, scroll: &mut u16) {
+    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+    let total = paragraph.line_count(area.width.max(1));
+    let visible = area.height as usize;
+    *scroll = (*scroll).min(total.saturating_sub(visible).min(u16::MAX as usize) as u16);
+    f.render_widget(paragraph.scroll((*scroll, 0)), area);
+    if total > visible {
+        let mut state = ScrollbarState::new(total)
+            .viewport_content_length(visible)
+            .position(*scroll as usize);
+        f.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::VerticalRight),
+            Rect {
+                width: area.width + 1,
+                ..area
+            },
+            &mut state,
+        );
+    }
+}
+fn scroll_pane(
+    f: &mut Frame,
+    area: Rect,
+    lines: Vec<Line<'static>>,
+    block: Block<'static>,
+    scroll: &mut u16,
+) {
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    scroll_body(f, inner, lines, scroll);
+}
 fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
     let area = f.area();
-    if area.width < 50 || area.height < 10 {
+    if area.width < 50 || area.height < 12 {
         f.render_widget(
             Paragraph::new(format!(
-                "Sova v{} · resize to 50 × 10 · q exit",
+                "Sova v{} · resize to 50 × 12 · q exit",
                 env!("CARGO_PKG_VERSION")
             )),
             area,
         );
         return;
     }
-    let outer = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(2),
-            Constraint::Min(1),
-            Constraint::Length(2),
-        ])
-        .split(area);
+    let outer = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Min(1),
+        Constraint::Length(2),
+    ])
+    .split(area);
     let filter = if app.editing || !app.filter.is_empty() {
         format!(
-            "  / {}{}",
+            " · / {}{}",
             safe_text(&app.filter),
             if app.editing { "_" } else { "" }
         )
@@ -794,37 +1000,50 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
             ),
             Span::styled(
                 format!(
-                    "  ·  {} sessions{}{filter}",
+                    " · {} · {} sessions{}{filter}",
+                    t.name,
                     app.sessions.len(),
-                    if app.stale { "  ·  STALE" } else { "" }
+                    if app.stale { " · STALE" } else { "" }
                 ),
                 Style::default().fg(t.status),
             ),
         ])),
         outer[0],
     );
-    let panes = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+    if area.width >= 90 {
+        let columns = Layout::horizontal([Constraint::Percentage(60), Constraint::Percentage(40)])
+            .split(outer[1]);
+        let desired = (app.rows.len() as u16)
+            .saturating_add(2)
+            .max(5)
+            .min(columns[0].height.saturating_mul(2) / 5)
+            .max(3);
+        let left =
+            Layout::vertical([Constraint::Length(desired), Constraint::Min(4)]).split(columns[0]);
+        app.list_area = left[0];
+        app.history_area = left[1];
+        app.details_area = columns[1];
+    } else {
+        let rows = Layout::vertical([
+            Constraint::Length((outer[1].height / 3).max(3)),
+            Constraint::Length((outer[1].height / 3).max(3)),
+            Constraint::Min(3),
+        ])
         .split(outer[1]);
-    app.list_area = panes[0];
-    app.details_area = panes[1];
+        app.list_area = rows[0];
+        app.details_area = rows[1];
+        app.history_area = rows[2];
+    }
     let selected = app.state.selected();
     let items: Vec<_> = app
         .rows
         .iter()
         .enumerate()
         .map(|(row_index, row)| match row {
-            Row::Project(p) => {
-                let name = std::path::Path::new(p)
-                    .file_name()
-                    .map(|p| p.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| p.clone());
-                ListItem::new(Line::styled(
-                    format!(" {name}"),
-                    Style::default().fg(t.project).add_modifier(Modifier::BOLD),
-                ))
-            }
+            Row::Project(p) => ListItem::new(Line::styled(
+                format!(" {}", compact_path(p)),
+                Style::default().fg(t.project).add_modifier(Modifier::BOLD),
+            )),
             Row::Session(i) => {
                 let s = &app.sessions[*i];
                 let active = selected == Some(row_index);
@@ -852,32 +1071,8 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
             }
         })
         .collect();
-    let border = |active: bool| Style::default().fg(if active { t.list_border } else { t.status });
-    let block = |title: &str, active: bool| {
-        Block::default()
-            .title(title.to_owned())
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(if active && app.details_focus {
-                Style::default().fg(t.detail_border)
-            } else {
-                border(active)
-            })
-    };
-    f.render_stateful_widget(
-        List::new(items)
-            .block(block(" Sessions ", !app.details_focus))
-            .highlight_style(
-                Style::default()
-                    .bg(t.selected_bg)
-                    .fg(t.selected_fg)
-                    .add_modifier(Modifier::BOLD),
-            )
-            .scroll_padding(2),
-        panes[0],
-        &mut app.state,
-    );
-    if app.rows.is_empty() {
+    let block = pane_block("Sessions", Focus::Sessions, app, t);
+    if items.is_empty() {
         f.render_widget(
             Paragraph::new(if app.last_scan.is_none() {
                 "Finding sessions…"
@@ -886,67 +1081,162 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
             } else {
                 "No matching sessions"
             })
-            .block(block(" Sessions ", !app.details_focus)),
-            panes[0],
+            .block(block),
+            app.list_area,
         );
-    }
-    let paragraph = Paragraph::new(details(app, t)).wrap(Wrap { trim: false });
-    let total = paragraph.line_count(panes[1].width.saturating_sub(2).max(1));
-    let visible = panes[1].height.saturating_sub(2) as usize;
-    let max_scroll = total.saturating_sub(visible).min(u16::MAX as usize) as u16;
-    app.detail_scroll = app.detail_scroll.min(max_scroll);
-    let title = if max_scroll > 0 {
-        format!(
-            " Details · {}/{} · wheel or Tab + ↑↓ ",
-            app.detail_scroll + 1,
-            max_scroll + 1
-        )
     } else {
-        " Details ".into()
-    };
-    f.render_widget(
-        paragraph
-            .block(block(&title, app.details_focus))
-            .scroll((app.detail_scroll, 0)),
-        panes[1],
-    );
-    if max_scroll > 0 {
-        let mut state = ScrollbarState::new(total)
-            .viewport_content_length(visible)
-            .position(app.detail_scroll as usize);
         f.render_stateful_widget(
-            Scrollbar::new(ScrollbarOrientation::VerticalRight),
-            panes[1],
-            &mut state,
+            List::new(items)
+                .block(block)
+                .highlight_style(
+                    Style::default()
+                        .bg(t.selected_bg)
+                        .fg(t.selected_fg)
+                        .add_modifier(Modifier::BOLD),
+                )
+                .scroll_padding(1),
+            app.list_area,
+            &mut app.state,
         );
     }
-    let expansion = if app.expanded {
-        "e collapse"
+    let block = pane_block("Details", Focus::Details, app, t);
+    let lines = details(app, t);
+    scroll_pane(f, app.details_area, lines, block, &mut app.detail_scroll);
+    let title = if app.expanded {
+        "History · Full text"
     } else {
-        "e expand"
+        "History · Previews"
     };
-    let help = if app.details_focus {
-        format!("↑↓ scroll details · Tab sessions · {expansion} · m metadata · q quit")
+    let block = pane_block(title, Focus::History, app, t);
+    let inner = block.inner(app.history_area);
+    f.render_widget(block, app.history_area);
+    let tabs = Line::from(
+        [
+            ("1 All", HistoryMode::All),
+            ("2 Answers", HistoryMode::Answers),
+            ("3 Questions", HistoryMode::Questions),
+        ]
+        .into_iter()
+        .flat_map(|(label, mode)| {
+            [
+                Span::styled(
+                    format!(" {label} "),
+                    if app.history_mode == mode {
+                        Style::default()
+                            .bg(t.selected_bg)
+                            .fg(t.selected_fg)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(t.label)
+                    },
+                ),
+                Span::raw(" "),
+            ]
+        })
+        .collect::<Vec<_>>(),
+    );
+    f.render_widget(Paragraph::new(tabs), Rect { height: 1, ..inner });
+    let body_area = Rect {
+        y: inner.y + 1,
+        height: inner.height.saturating_sub(1),
+        ..inner
+    };
+    let lines = history(app, t);
+    scroll_body(f, body_area, lines, &mut app.history_scroll);
+    let expansion = if expandable(app) {
+        if app.expanded {
+            "← previews"
+        } else {
+            "→ full text"
+        }
     } else {
-        format!("↑↓ sessions · Enter Jump · Tab details · / search · {expansion} · ? help · q quit")
+        "All text shown"
+    };
+    let context = match app.focus {
+        Focus::Sessions => "↑↓ select · Enter open",
+        Focus::History => "↑↓ scroll · 1/2/3 filter",
+        Focus::Details => "↑↓ scroll details",
+    };
+    let hint = if area.width >= 90 {
+        format!(" {context} · Tab pane · {expansion}")
+    } else {
+        match app.focus {
+            Focus::Sessions => " ↑↓ pick · Enter open · Tab pane".into(),
+            Focus::History => " ↑↓ scroll · Tab pane · ←/→ text".into(),
+            Focus::Details => " ↑↓ scroll · Tab pane".into(),
+        }
     };
     f.render_widget(
-        Paragraph::new(vec![
-            Line::styled(help, Style::default().fg(t.status)),
-            Line::styled(
-                safe_text(&app.notice),
-                Style::default().fg(if app.stale || app.notice.contains("refused") {
-                    t.error
-                } else {
-                    t.info
-                }),
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                format!(" {} ", app.focus.label()),
+                Style::default()
+                    .bg(t.selected_bg)
+                    .fg(t.selected_fg)
+                    .add_modifier(Modifier::BOLD),
             ),
-        ]),
-        outer[2],
+            Span::styled(hint, Style::default().fg(t.task)),
+        ])),
+        Rect {
+            height: 1,
+            ..outer[2]
+        },
+    );
+    let footer = Layout::horizontal([Constraint::Min(0), Constraint::Length(15)]).split(Rect {
+        y: outer[2].y + 1,
+        height: 1,
+        ..outer[2]
+    });
+    f.render_widget(
+        Paragraph::new(if app.notice.is_empty() {
+            "t Theme · / Find · r Refresh".into()
+        } else {
+            safe_text(&app.notice)
+        })
+        .style(Style::default().fg(
+            if app.stale || app.notice.contains("failed") || app.notice.contains("refused") {
+                t.error
+            } else {
+                t.info
+            },
+        )),
+        footer[0],
+    );
+    f.render_widget(
+        Paragraph::new("? Help · q Quit").style(Style::default().fg(t.task)),
+        footer[1],
     );
     if app.help {
-        f.render_widget(ratatui::widgets::Clear, panes[1]);
-        f.render_widget(Paragraph::new("↑/↓ or j/k: select sessions (headings are skipped)\nEnter/o: open exact existing pane\nTab: switch pane · →: details · ←: sessions\nWheel: scroll the pane under the pointer\nPageUp/PageDown, Home/End: scroll focused pane\ne: expand/collapse long messages\nm: show/hide technical identifiers\n/: search · r: refresh locations and content\n?: close help · q/Ctrl+C: exit\n\n● Working · ○ Idle · ! Approval\n? Question/action · × Blocked\n◆ New response ready · ✓ Pane opened\n· Activity unknown\nOpening a pane does not prove reading.\nTracking lasts while Sova is open.\n\nContent comes from the selected terminal's visible screen.\nIt may be incomplete; an input draft is not a sent request.\nSova never types into or controls agents.").block(block(" Help ",true)).wrap(Wrap{trim:false}),panes[1]);
+        f.render_widget(ratatui::widgets::Clear, outer[1]);
+        f.render_widget(
+            Paragraph::new(
+                "Tab / Shift+Tab: focus Sessions → History → Details
+Active pane: double border and highlighted title
+↑/↓ or j/k: select sessions or scroll focused pane
+Wheel: scroll under pointer · click: focus pane
+Enter/o: open exact existing iTerm2 pane
+→: full history text · ←: message previews · e: toggle
+1 All · 2 Agent answers · 3 Your questions · h: next filter
+t: next theme (saved and applied immediately)
+/: search · r: refresh · q/Ctrl+C: exit
+PageUp/PageDown, Home/End: scroll focused pane
+
+● Working · ○ Idle · ! Approval
+? Question/action · × Blocked
+◆ New response ready · ✓ Pane opened · · Unknown
+Opening is not proof of reading. Tracking lasts while Sova is open.
+
+History is a visible terminal snapshot, not a complete archived chat.
+Esc/?: close help",
+            )
+            .block(
+                Block::bordered()
+                    .title(" Help ")
+                    .border_style(Style::default().fg(t.label)),
+            )
+            .wrap(Wrap { trim: false }),
+            outer[1],
+        );
     }
 }
 #[cfg(test)]
@@ -1072,8 +1362,8 @@ mod tests {
             .collect::<String>();
         for expected in [
             &format!("Sova v{}", env!("CARGO_PKG_VERSION")),
-            "STATUS",
-            "TERMINAL & SESSION",
+            "SESSION",
+            "TERMINAL",
             "LATEST EXCHANGE",
             "Request",
             "Answer",
@@ -1113,10 +1403,187 @@ mod tests {
             }),
         ));
         app.expanded = true;
-        app.detail_scroll = u16::MAX;
+        app.history_scroll = u16::MAX;
         let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 25)).unwrap();
         term.draw(|f| draw(f, &mut app, &crate::theme::get("classic").unwrap()))
             .unwrap();
-        assert!(app.detail_scroll > 0 && app.detail_scroll < u16::MAX);
+        assert!(app.history_scroll > 0 && app.history_scroll < u16::MAX);
+    }
+    fn inert_worker() -> Worker {
+        let (tx, _) = mpsc::channel();
+        let (jumps, _) = mpsc::channel();
+        let (_, rx) = mpsc::channel();
+        Worker {
+            tx,
+            jumps,
+            rx,
+            joins: vec![],
+            cancelled: Arc::new(AtomicBool::new(false)),
+        }
+    }
+    fn content_app() -> App {
+        let mut app = App::new();
+        app.reconcile(vec![
+            session("a", "/parent/project"),
+            session("b", "/parent/project"),
+        ]);
+        app.content = Some((
+            "a".into(),
+            Ok(Content {
+                state: "Working",
+                messages: vec![
+                    content::Message {
+                        role: Role::You,
+                        text: "User question only".into(),
+                    },
+                    content::Message {
+                        role: Role::Action,
+                        text: "Tool action only".into(),
+                    },
+                    content::Message {
+                        role: Role::Agent,
+                        text: format!(
+                            "Agent answer only\n{}END_OF_REPLY",
+                            "line of text\n".repeat(30)
+                        ),
+                    },
+                ],
+                context: String::new(),
+            }),
+        ));
+        app
+    }
+    fn text(lines: Vec<Line<'static>>) -> String {
+        lines
+            .into_iter()
+            .map(|l| {
+                l.spans
+                    .into_iter()
+                    .map(|s| s.content.into_owned())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+    #[test]
+    fn filters_expand_and_keyboard_focus_have_visible_independent_effects() {
+        let mut app = content_app();
+        let worker = inert_worker();
+        let mut t = crate::theme::get("sunset").unwrap();
+        let keypress = |code, app: &mut App, t: &mut Theme| {
+            assert!(!key(
+                KeyEvent::new(code, KeyModifiers::NONE),
+                app,
+                &worker,
+                t
+            ));
+        };
+        keypress(KeyCode::Tab, &mut app, &mut t);
+        assert_eq!(app.focus, Focus::History);
+        keypress(KeyCode::Tab, &mut app, &mut t);
+        assert_eq!(app.focus, Focus::Details);
+        keypress(KeyCode::Down, &mut app, &mut t);
+        assert_eq!(app.detail_scroll, 1);
+        assert_eq!(app.history_scroll, 0);
+        assert_eq!(app.selected().unwrap().id, "a");
+        keypress(KeyCode::Char('2'), &mut app, &mut t);
+        let answers = text(history(&app, &t));
+        assert!(answers.contains("Agent answer only"));
+        assert!(!answers.contains("User question only"));
+        assert!(!answers.contains("Tool action only"));
+        assert!(!answers.contains("END_OF_REPLY"));
+        keypress(KeyCode::Right, &mut app, &mut t);
+        assert!(app.expanded);
+        assert_eq!(app.focus, Focus::History);
+        assert!(text(history(&app, &t)).contains("END_OF_REPLY"));
+        keypress(KeyCode::Left, &mut app, &mut t);
+        assert!(!app.expanded);
+        assert!(!text(history(&app, &t)).contains("END_OF_REPLY"));
+        keypress(KeyCode::Char('3'), &mut app, &mut t);
+        let questions = text(history(&app, &t));
+        assert!(questions.contains("User question only"));
+        assert!(!questions.contains("Agent answer only"));
+        keypress(KeyCode::Right, &mut app, &mut t);
+        assert!(!app.expanded);
+        assert!(app.notice.contains("nothing to expand"));
+        keypress(KeyCode::Char('1'), &mut app, &mut t);
+        assert!(text(history(&app, &t)).contains("Tool action only"));
+        app.detail_scroll = 7;
+        keypress(KeyCode::Down, &mut app, &mut t);
+        assert_eq!(app.history_scroll, 1);
+        assert_eq!(app.detail_scroll, 7);
+    }
+    #[test]
+    fn responsive_panels_focus_and_mouse_filters_survive_resize() {
+        let t = crate::theme::get("sunset").unwrap();
+        let mut app = content_app();
+        for (w, h) in [(150, 40), (100, 25), (80, 25), (50, 12), (150, 40)] {
+            let mut term =
+                ratatui::Terminal::new(ratatui::backend::TestBackend::new(w, h)).unwrap();
+            term.draw(|f| draw(f, &mut app, &t)).unwrap();
+            for a in [app.list_area, app.history_area, app.details_area] {
+                assert!(a.width > 2 && a.height >= 3, "{w}×{h}: {a:?}");
+                assert!(a.right() <= w && a.bottom() <= h - 2);
+            }
+            assert!(!app.list_area.intersects(app.history_area));
+            assert!(!app.details_area.intersects(app.history_area));
+            assert!(!app.list_area.intersects(app.details_area));
+            if w >= 90 {
+                assert_eq!(app.list_area.x, app.history_area.x);
+                assert!(app.details_area.x > app.list_area.x);
+            }
+            let before = app.row_key();
+            mouse(
+                event::MouseEvent {
+                    kind: MouseEventKind::Down(event::MouseButton::Left),
+                    column: app.history_area.x + 10,
+                    row: app.history_area.y + 1,
+                    modifiers: KeyModifiers::NONE,
+                },
+                &mut app,
+            );
+            assert_eq!(app.history_mode, HistoryMode::Answers);
+            assert_eq!(app.focus, Focus::History);
+            assert_eq!(app.row_key(), before);
+            term.draw(|f| draw(f, &mut app, &t)).unwrap();
+            assert_eq!(
+                term.backend().buffer()[(app.history_area.x, app.history_area.y)].symbol(),
+                "╔"
+            );
+            assert_eq!(
+                term.backend().buffer()[(app.list_area.x, app.list_area.y)].symbol(),
+                "╭"
+            );
+            mouse(
+                event::MouseEvent {
+                    kind: MouseEventKind::ScrollDown,
+                    column: app.details_area.x + 2,
+                    row: app.details_area.y + 2,
+                    modifiers: KeyModifiers::NONE,
+                },
+                &mut app,
+            );
+            assert_eq!(app.focus, Focus::Details);
+            assert_eq!(app.row_key(), before);
+        }
+    }
+    #[test]
+    fn compact_paths_keep_parent_and_home_identity() {
+        assert_eq!(
+            compact_path_with_home("/Users/alex", Some("/Users/alex")),
+            "~/"
+        );
+        assert_eq!(
+            compact_path_with_home("/Users/alex/sova", Some("/Users/alex")),
+            "~/sova/"
+        );
+        assert_eq!(
+            compact_path_with_home("/work/cli/sova", Some("/Users/alex")),
+            "…/cli/sova/"
+        );
+        assert_eq!(
+            compact_path_with_home("/Users/alexander/project", Some("/Users/alex")),
+            "…/alexander/project/"
+        );
     }
 }

@@ -199,3 +199,27 @@ Desktop input archives and prior release payloads were preserved.
 The installed `sova list --json` subsequently returned eight live sessions, all
 eight linked; it did not select any terminal pane. make check also passed after
 the source-directory move.
+
+
+## Three-pane UI local verification — 2026-10-09
+
+Built and installed the current main UI locally; package version remains 0.2.0
+and these changes are Unreleased. Sessions sits above History in the left 60%
+column with full-height Details at right; below 90 columns they stack vertically.
+30 Rust tests cover history role filters, preview/full-text tail visibility,
+keyboard/mouse focus, independent scrolling and resize boundaries. make check
+also passed delivery/config-preservation and isolated release checks.
+
+Exercised the installed binary in a controlling PTY: actual linked sessions,
+visible terminal window/tab/pane/folder and identity sections, double focus
+borders, Tab transitions, 1/2/3 filters, arrows, Details End/Home scrolling,
+all five live t theme changes with comment/timer preservation, sizes 150×40,
+80×25 and 50×12, mouse filtering, help/Esc and q. Exit restored the terminal and
+reaped owned helpers. Agent processes and terminal names were not modified.
+The user's installed palette is sunset, matching their active gtd preset;
+other configuration values were preserved. Restart an already-open Sova view
+with q and sova to load the installed UI.
+
+History remains a visible terminal snapshot; the filters do not create a full
+provider archive. Session names shown in Details remain terminal-derived; native
+chat renaming stays with the agent CLI and terminal tab renaming stays with iTerm2.
