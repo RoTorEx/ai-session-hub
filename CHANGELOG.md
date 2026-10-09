@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Fix GitHub Actions artifact directory context and allow publication of an
+  existing release tag after workflow repair without rewriting the tag.
+
 ## [0.1.0] - 2026-10-09
 
 - Session-only navigation, simplified project headings and readable gtd-style
