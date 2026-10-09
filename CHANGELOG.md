@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-09
+
 - Split the view into compact Sessions above filtered History and full-height
   Details, with a vertical layout for narrow terminals and short parent paths.
 - Add ruled Details sections and visible session names, stronger focus borders,
