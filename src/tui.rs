@@ -39,13 +39,19 @@ enum Focus {
     #[default]
     Sessions,
     History,
-    Details,
+    Reader,
 }
 impl Focus {
-    fn next(self, backwards: bool) -> Self {
+    fn next(self, backwards: bool, reader_open: bool) -> Self {
+        if !reader_open {
+            return match self {
+                Self::Sessions => Self::History,
+                Self::History | Self::Reader => Self::Sessions,
+            };
+        }
         match (self, backwards) {
-            (Self::Sessions, false) | (Self::Details, true) => Self::History,
-            (Self::History, false) | (Self::Sessions, true) => Self::Details,
+            (Self::Sessions, false) | (Self::Reader, true) => Self::History,
+            (Self::History, false) | (Self::Sessions, true) => Self::Reader,
             _ => Self::Sessions,
         }
     }
@@ -53,7 +59,7 @@ impl Focus {
         match self {
             Self::Sessions => "Sessions",
             Self::History => "History",
-            Self::Details => "Details",
+            Self::Reader => "Message",
         }
     }
 }
@@ -139,6 +145,9 @@ impl App {
         self.detail_scroll = 0;
         self.history_state = ListState::default();
         self.expanded = false;
+        if self.focus == Focus::Reader {
+            self.focus = Focus::History;
+        }
         self.selected_since = Instant::now();
         self.last_content = None;
         self.content = None;
@@ -171,6 +180,9 @@ impl App {
         self.history_state.select(index);
         if previous.is_some() && matched.is_none() {
             self.expanded = false;
+            if self.focus == Focus::Reader {
+                self.focus = Focus::History;
+            }
             self.detail_scroll = 0;
         }
     }
@@ -560,7 +572,7 @@ fn navigate(app: &mut App, delta: isize) {
     match app.focus {
         Focus::Sessions => app.move_selection(delta),
         Focus::History => app.move_history(delta),
-        Focus::Details => {
+        Focus::Reader => {
             app.detail_scroll = app
                 .detail_scroll
                 .saturating_add_signed(delta.clamp(i16::MIN as isize, i16::MAX as isize) as i16)
@@ -608,7 +620,7 @@ fn expand(app: &mut App, expanded: bool) {
     }
     app.expanded = expanded;
     app.detail_scroll = 0;
-    if !expanded && app.focus == Focus::Details {
+    if !expanded && app.focus == Focus::Reader {
         app.focus = Focus::History;
     }
     app.notice.clear();
@@ -651,10 +663,12 @@ fn key(k: KeyEvent, app: &mut App, worker: &Worker, theme: &mut Theme) -> bool {
         KeyCode::Esc => return true,
         KeyCode::Char('/') => app.editing = true,
         KeyCode::Char('?') => app.help = true,
-        KeyCode::Tab | KeyCode::Char('f' | 'F' | 'а' | 'А') => app.focus = app.focus.next(false),
-        KeyCode::BackTab => app.focus = app.focus.next(true),
-        KeyCode::Right if app.focus != Focus::Details => navigate(app, 1),
-        KeyCode::Left if app.focus != Focus::Details => navigate(app, -1),
+        KeyCode::Tab | KeyCode::Char('f' | 'F' | 'а' | 'А') => {
+            app.focus = app.focus.next(false, app.expanded)
+        }
+        KeyCode::BackTab => app.focus = app.focus.next(true, app.expanded),
+        KeyCode::Right if app.focus != Focus::Reader => navigate(app, 1),
+        KeyCode::Left if app.focus != Focus::Reader => navigate(app, -1),
         KeyCode::Char('e' | 'у') => expand(app, !app.expanded),
         KeyCode::Char('t' | 'е') => {
             let index = crate::theme::NAMES
@@ -685,12 +699,12 @@ fn key(k: KeyEvent, app: &mut App, worker: &Worker, theme: &mut Theme) -> bool {
         KeyCode::Home => match app.focus {
             Focus::Sessions => app.move_selection(isize::MIN),
             Focus::History => app.move_history(isize::MIN),
-            Focus::Details => app.detail_scroll = 0,
+            Focus::Reader => app.detail_scroll = 0,
         },
         KeyCode::End => match app.focus {
             Focus::Sessions => app.move_selection(isize::MAX),
             Focus::History => app.move_history(isize::MAX),
-            Focus::Details => app.detail_scroll = u16::MAX,
+            Focus::Reader => app.detail_scroll = u16::MAX,
         },
         _ => {}
     }
@@ -835,7 +849,7 @@ fn reader(app: &App, t: &Theme) -> Vec<Line<'static>> {
 }
 fn draw_history(f: &mut Frame, app: &mut App, t: &Theme) {
     let entries = history_entries(app);
-    let block = pane_block("History", Focus::History, app, t);
+    let block = pane_block("History · oldest → newest", Focus::History, app, t);
     if entries.is_empty() {
         let message = if app.selected().is_none() {
             "Select a session to see its history".into()
@@ -916,7 +930,7 @@ fn pane_block(title: &str, focus: Focus, app: &App, t: &Theme) -> Block<'static>
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(if app.focus == focus {
-            if focus == Focus::Details {
+            if focus == Focus::Reader {
                 t.detail_border
             } else {
                 t.list_border
@@ -1101,7 +1115,7 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
         } else {
             "Details"
         },
-        Focus::Details,
+        Focus::Reader,
         app,
         t,
     );
@@ -1121,7 +1135,7 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
                 "↑↓ message · e expand"
             }
         }
-        Focus::Details => "↑↓ scroll",
+        Focus::Reader => "↑↓ scroll",
     };
     f.render_widget(
         Paragraph::new(format!("f Focus: {} · {context}", app.focus.label()))
@@ -1159,13 +1173,13 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
         f.render_widget(ratatui::widgets::Clear, outer[1]);
         f.render_widget(
             Paragraph::new(
-                "f / Tab: cycle focus Sessions → History → right pane
+                "f / Tab: cycle Sessions ↔ History; include Message when open
 Startup focus: Sessions. Mouse does not change keyboard focus.
 ↑/↓ or j/k: select a session/message or scroll the right pane
 ←/→: previous/next session or history message
 e / Enter in History: expand selected message in the right pane
 Esc / e: close the message and restore session Details
-History previews: first 100 characters of each available message
+History: oldest at top, newest at bottom; previews of 100 characters
 Wheel: select messages or scroll under the pointer, without changing focus
 Enter in Sessions / o: open exact existing iTerm2 pane
 t: next theme (saved and applied immediately)
@@ -1439,6 +1453,13 @@ mod tests {
         press(KeyCode::Char('f'), &mut app, &mut t);
         assert_eq!(app.focus, Focus::History);
         assert_eq!(history_entries(&app).len(), 3);
+        press(KeyCode::Tab, &mut app, &mut t);
+        assert_eq!(app.focus, Focus::Sessions);
+        press(KeyCode::BackTab, &mut app, &mut t);
+        assert_eq!(app.focus, Focus::History);
+        press(KeyCode::BackTab, &mut app, &mut t);
+        assert_eq!(app.focus, Focus::Sessions);
+        press(KeyCode::Char('f'), &mut app, &mut t);
         press(KeyCode::Char('e'), &mut app, &mut t);
         assert!(app.expanded);
         assert_eq!(app.focus, Focus::History);
@@ -1465,7 +1486,7 @@ mod tests {
         assert!(right.contains("User question only"));
         assert!(!right.contains("TERMINAL"));
         press(KeyCode::Char('f'), &mut app, &mut t);
-        assert_eq!(app.focus, Focus::Details);
+        assert_eq!(app.focus, Focus::Reader);
         press(KeyCode::Down, &mut app, &mut t);
         assert_eq!(app.detail_scroll, 1);
         press(KeyCode::Esc, &mut app, &mut t);
@@ -1497,9 +1518,11 @@ mod tests {
         app.set_content(Some(("a".into(), Ok(next.clone()))));
         assert_eq!(app.history_state.selected(), Some(1));
         assert!(app.expanded);
+        app.focus = Focus::Reader;
         next.messages.remove(1);
         app.set_content(Some(("a".into(), Ok(next))));
         assert!(!app.expanded);
+        assert_eq!(app.focus, Focus::History);
         app.reconcile(vec![]);
         assert!(selected_entry(&app).is_none());
     }

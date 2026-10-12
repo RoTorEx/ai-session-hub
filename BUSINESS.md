@@ -58,11 +58,15 @@ Navigation selects individual messages (question, answer, or action), not lines.
 e / Enter in History opens the selected full retained message in the right column
 in place of Details. Focus stays in History; subsequent selections update the
 reader. Esc/e restores Details. f focuses the right reader for line scrolling.
+Details itself is excluded from keyboard focus; its metadata remains scrollable
+with the mouse wheel.
 Refresh preserves the selected message when its text persists or grows; if the
 message disappears, the reader closes rather than presenting a different message.
-No guessed message timestamps or additional scans are introduced.
+The History heading states oldest → newest: earlier messages are above later
+ones. No guessed message timestamps or additional scans are introduced.
 
-Startup focus is Sessions. f / Tab cycles Sessions → History → right pane;
+Startup focus is Sessions. f / Tab cycles Sessions ↔ History, adding the right
+message reader only while open;
 Shift+Tab cycles backward. The active pane has a muted accent border and a footer
 focus label, with no filled/bold title. Mouse clicks do not change focus; wheel
 operates the pane under the pointer. Arrows/page keys operate on keyboard focus.
