@@ -2,10 +2,9 @@
 
 ## [Unreleased]
 
-- Skip passive Details during focus cycling; retain keyboard scrolling for the open message reader and clarify History order.
-- Start with Sessions focus; add f focus cycling and keep mouse clicks from changing it.
-- Navigate all History messages individually with 100-character previews; open selected text in the right pane and restore Details with Esc.
-- Preserve message selection on refresh, remove role filters and duplicate latest exchange details.
+- Group each request with its answers and actions in one History iteration, selecting the top iteration on session changes.
+- Open the full iteration in Content; allow focus switching for scrolling and keep passive Details outside the focus cycle.
+- Preserve iteration selection as responses grow; remove role filters and duplicate latest exchange details.
 - Add the calm default palette, subtle focus borders and simpler directory groups.
 
 ## [0.2.1] - 2026-10-09

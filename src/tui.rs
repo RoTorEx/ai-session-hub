@@ -59,14 +59,25 @@ impl Focus {
         match self {
             Self::Sessions => "Sessions",
             Self::History => "History",
-            Self::Reader => "Message",
+            Self::Reader => "Content",
         }
     }
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct HistoryEntry {
     label: &'static str,
-    text: String,
+    messages: Vec<content::Message>,
+}
+impl HistoryEntry {
+    fn preserves(&self, previous: &Self) -> bool {
+        self.label == previous.label
+            && self.messages.len() >= previous.messages.len()
+            && self
+                .messages
+                .iter()
+                .zip(&previous.messages)
+                .all(|(new, old)| new.role == old.role && new.text.starts_with(&old.text))
+    }
 }
 #[derive(Clone)]
 enum Row {
@@ -162,9 +173,7 @@ impl App {
             entries
                 .iter()
                 .enumerate()
-                .filter(|(_, m)| {
-                    m.label == p.label && (m.text == p.text || m.text.starts_with(&p.text))
-                })
+                .filter(|(_, m)| m.preserves(p))
                 .min_by_key(|(i, _)| i.abs_diff(old))
                 .map(|(i, _)| i)
         });
@@ -172,7 +181,7 @@ impl App {
             if entries.is_empty() {
                 None
             } else if previous.is_none() {
-                Some(entries.len() - 1)
+                Some(0)
             } else {
                 Some(old.min(entries.len() - 1))
             }
@@ -193,15 +202,12 @@ impl App {
             return;
         }
         let old = self.history_state.selected();
-        let next = old
-            .unwrap_or(len - 1)
-            .saturating_add_signed(delta)
-            .min(len - 1);
+        let next = old.unwrap_or(0).saturating_add_signed(delta).min(len - 1);
         self.history_state.select(Some(next));
         if old != Some(next) {
             self.detail_scroll = 0;
         }
-        // An open reader follows the explicitly selected message.
+        // An open reader follows the explicitly selected iteration.
     }
     fn rebuild(&mut self, preferred: Option<String>) {
         let old = self.state.selected().unwrap_or(0);
@@ -588,17 +594,29 @@ fn selected_content(app: &App) -> Option<&Result<Content, String>> {
 }
 fn history_entries(app: &App) -> Vec<HistoryEntry> {
     match selected_content(app) {
-        Some(Ok(c)) if !c.messages.is_empty() => c
-            .messages
-            .iter()
-            .map(|m| HistoryEntry {
-                label: m.role.label(),
-                text: m.text.clone(),
-            })
-            .collect(),
+        Some(Ok(c)) if !c.messages.is_empty() => {
+            let mut entries: Vec<HistoryEntry> = Vec::new();
+            for message in &c.messages {
+                if message.role == content::Role::You || entries.is_empty() {
+                    entries.push(HistoryEntry {
+                        label: if message.role == content::Role::You {
+                            "Iteration"
+                        } else {
+                            "Partial iteration"
+                        },
+                        messages: Vec::new(),
+                    });
+                }
+                entries.last_mut().unwrap().messages.push(message.clone());
+            }
+            entries
+        }
         Some(Ok(c)) if !c.context.is_empty() => vec![HistoryEntry {
             label: "Terminal snapshot",
-            text: c.context.clone(),
+            messages: vec![content::Message {
+                role: content::Role::Agent,
+                text: c.context.clone(),
+            }],
         }],
         _ => vec![],
     }
@@ -606,16 +624,12 @@ fn history_entries(app: &App) -> Vec<HistoryEntry> {
 fn selected_entry(app: &App) -> Option<HistoryEntry> {
     let entries = history_entries(app);
     entries
-        .get(
-            app.history_state
-                .selected()
-                .unwrap_or(entries.len().saturating_sub(1)),
-        )
+        .get(app.history_state.selected().unwrap_or(0))
         .cloned()
 }
 fn expand(app: &mut App, expanded: bool) {
     if expanded && (app.focus != Focus::History || selected_entry(app).is_none()) {
-        app.notice = "Use f to focus History, select a message, then press e.".into();
+        app.notice = "Use f to focus History, select an iteration, then press e.".into();
         return;
     }
     app.expanded = expanded;
@@ -837,14 +851,18 @@ fn project_label(app: &App, path: &str) -> String {
 }
 fn reader(app: &App, t: &Theme) -> Vec<Line<'static>> {
     let Some(entry) = selected_entry(app) else {
-        return vec![Line::raw("Message unavailable")];
+        return vec![Line::raw("Iteration unavailable")];
     };
-    let mut lines = vec![separator(
-        entry.label,
-        app.details_area.width.saturating_sub(2),
-        t,
-    )];
-    body(&mut lines, &entry.text, t);
+    let mut lines = Vec::new();
+    for message in &entry.messages {
+        lines.push(separator(
+            message.role.label(),
+            app.details_area.width.saturating_sub(2),
+            t,
+        ));
+        body(&mut lines, &message.text, t);
+        lines.push(Line::default());
+    }
     lines
 }
 fn draw_history(f: &mut Frame, app: &mut App, t: &Theme) {
@@ -872,7 +890,7 @@ fn draw_history(f: &mut Frame, app: &mut App, t: &Theme) {
     let selected = app
         .history_state
         .selected()
-        .unwrap_or(entries.len() - 1)
+        .unwrap_or(0)
         .min(entries.len() - 1);
     app.history_state.select(Some(selected));
     let items: Vec<_> = entries
@@ -883,10 +901,16 @@ fn draw_history(f: &mut Frame, app: &mut App, t: &Theme) {
                 app.history_area.width.saturating_sub(4),
                 t,
             )];
-            lines.extend(wrap_preview(
-                &preview(&m.text),
-                app.history_area.width.saturating_sub(4),
-            ));
+            for message in &m.messages {
+                lines.push(Line::styled(
+                    message.role.label(),
+                    Style::default().fg(t.label),
+                ));
+                lines.extend(wrap_preview(
+                    &preview(&message.text),
+                    app.history_area.width.saturating_sub(4),
+                ));
+            }
             lines.push(Line::default());
             ListItem::new(lines)
         })
@@ -1111,7 +1135,7 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
     }
     let block = pane_block(
         if app.expanded {
-            "Message · Esc to close"
+            "Content · f scroll · Esc close"
         } else {
             "Details"
         },
@@ -1130,9 +1154,9 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
         Focus::Sessions => "↑↓ select · Enter open",
         Focus::History => {
             if app.expanded {
-                "↑↓ message · e close"
+                "↑↓ iteration · f scroll · e close"
             } else {
-                "↑↓ message · e expand"
+                "↑↓ iteration · e expand"
             }
         }
         Focus::Reader => "↑↓ scroll",
@@ -1173,14 +1197,15 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
         f.render_widget(ratatui::widgets::Clear, outer[1]);
         f.render_widget(
             Paragraph::new(
-                "f / Tab: cycle Sessions ↔ History; include Message when open
+                "f / Tab: cycle Sessions ↔ History; include Content when open
 Startup focus: Sessions. Mouse does not change keyboard focus.
-↑/↓ or j/k: select a session/message or scroll the right pane
-←/→: previous/next session or history message
-e / Enter in History: expand selected message in the right pane
-Esc / e: close the message and restore session Details
-History: oldest at top, newest at bottom; previews of 100 characters
-Wheel: select messages or scroll under the pointer, without changing focus
+↑/↓ or j/k: select a session/iteration or scroll the right pane
+←/→: previous/next session or history iteration
+e / Enter in History: expand selected iteration in the right pane
+Esc / e: close the iteration and restore session Details
+History: oldest at top, newest at bottom; start at the top
+Each iteration groups You, Action and Agent; previews of 100 characters
+Wheel: select iterations or scroll under the pointer, without changing focus
 Enter in Sessions / o: open exact existing iTerm2 pane
 t: next theme (saved and applied immediately)
 /: search · r: refresh · q/Ctrl+C: exit
@@ -1452,7 +1477,7 @@ mod tests {
         app = content_app();
         press(KeyCode::Char('f'), &mut app, &mut t);
         assert_eq!(app.focus, Focus::History);
-        assert_eq!(history_entries(&app).len(), 3);
+        assert_eq!(history_entries(&app).len(), 1);
         press(KeyCode::Tab, &mut app, &mut t);
         assert_eq!(app.focus, Focus::Sessions);
         press(KeyCode::BackTab, &mut app, &mut t);
@@ -1464,10 +1489,10 @@ mod tests {
         assert!(app.expanded);
         assert_eq!(app.focus, Focus::History);
         assert!(text(reader(&app, &t)).contains("END_OF_REPLY"));
-        assert!(!preview(&selected_entry(&app).unwrap().text).contains("END_OF_REPLY"));
+        assert!(!preview(&selected_entry(&app).unwrap().messages[2].text).contains("END_OF_REPLY"));
         press(KeyCode::Up, &mut app, &mut t);
         assert!(text(reader(&app, &t)).contains("Tool action only"));
-        assert!(!text(reader(&app, &t)).contains("END_OF_REPLY"));
+        assert!(text(reader(&app, &t)).contains("END_OF_REPLY"));
         press(KeyCode::Up, &mut app, &mut t);
         assert!(text(reader(&app, &t)).contains("User question only"));
         let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 30)).unwrap();
@@ -1497,7 +1522,47 @@ mod tests {
         let right = right_text(&term, app.details_area);
         assert!(right.contains("TERMINAL"));
         assert!(!right.contains("User question only"));
-        assert_eq!(history_entries(&app).len(), 3);
+        assert_eq!(history_entries(&app).len(), 1);
+    }
+    #[test]
+    fn iterations_group_requests_with_all_following_output_and_start_at_top() {
+        let mut app = content_app();
+        let mut content = selected_content(&app).unwrap().as_ref().unwrap().clone();
+        content.messages.extend([
+            content::Message {
+                role: Role::You,
+                text: "Second request".into(),
+            },
+            content::Message {
+                role: Role::Agent,
+                text: "Second answer".into(),
+            },
+            content::Message {
+                role: Role::You,
+                text: "Pending request".into(),
+            },
+        ]);
+        app.set_content(Some(("a".into(), Ok(content.clone()))));
+        let entries = history_entries(&app);
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].messages.len(), 3);
+        assert_eq!(entries[1].messages.len(), 2);
+        assert_eq!(entries[2].messages.len(), 1);
+        assert_eq!(app.history_state.selected(), Some(0));
+        app.focus = Focus::History;
+        expand(&mut app, true);
+        app.move_history(1);
+        let t = crate::theme::get("calm").unwrap();
+        let full = text(reader(&app, &t));
+        assert!(full.contains("Second request") && full.contains("Second answer"));
+        assert!(!full.contains("User question only"));
+        app.move_selection(1);
+        assert!(!app.expanded);
+        app.set_content(Some(("b".into(), Ok(content))));
+        assert_eq!(app.history_state.selected(), Some(0));
+        let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 30)).unwrap();
+        term.draw(|f| draw(f, &mut app, &t)).unwrap();
+        assert_eq!(app.history_state.offset(), 0);
     }
     #[test]
     fn previews_are_unicode_safe_and_refresh_preserves_the_reader() {
@@ -1508,6 +1573,10 @@ mod tests {
         app.focus = Focus::History;
         expand(&mut app, true);
         let mut next = selected_content(&app).unwrap().as_ref().unwrap().clone();
+        next.messages[2].text.push_str(" Growing answer");
+        app.set_content(Some(("a".into(), Ok(next.clone()))));
+        assert!(app.expanded);
+        assert_eq!(app.history_state.selected(), Some(0));
         next.messages.insert(
             0,
             content::Message {

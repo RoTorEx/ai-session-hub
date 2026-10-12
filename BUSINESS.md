@@ -51,26 +51,29 @@ exchange is shown only in History, avoiding duplicated content.
 Groups display the directory basename, or ~ for home. Duplicate basenames include
 the parent directory for distinction; full paths stay in Details and search.
 
-History shows every available message in chronological order, including action
-blocks. There are no role filters. Each preview shows the first 100 Unicode
-characters, flattened to one paragraph, with an ellipsis for longer messages.
-Navigation selects individual messages (question, answer, or action), not lines.
-e / Enter in History opens the selected full retained message in the right column
-in place of Details. Focus stays in History; subsequent selections update the
-reader. Esc/e restores Details. f focuses the right reader for line scrolling.
-Details itself is excluded from keyboard focus; its metadata remains scrollable
-with the mouse wheel.
-Refresh preserves the selected message when its text persists or grows; if the
-message disappears, the reader closes rather than presenting a different message.
-The History heading states oldest → newest: earlier messages are above later
-ones. No guessed message timestamps or additional scans are introduced.
+History groups each observed user request and all following agent/action blocks
+up to the next request into one iteration. Leading output without its visible
+request is kept as a partial iteration; requests awaiting an answer stay visible.
+There are no role filters. Each message inside a block previews its first 100
+Unicode characters, flattened to one paragraph, with an ellipsis for longer text.
+Navigation selects iterations, not individual messages or lines. Selecting a
+session resets History to its topmost iteration and scroll position. The heading
+states oldest → newest: earlier iterations are above later ones.
+e / Enter in History opens the full retained iteration in the right column in
+place of Details, with separate You/Agent/Action headings. Focus stays in History;
+subsequent selections update the reader. Esc/e restores Details. f / Tab focuses
+the right Content reader for line scrolling. Details itself is excluded from
+keyboard focus; its metadata remains scrollable with the mouse wheel.
+Refresh preserves the selected iteration when its messages persist, grow or gain
+following output; if it disappears, the reader closes rather than showing another
+iteration. No guessed message timestamps or additional scans are introduced.
 
 Startup focus is Sessions. f / Tab cycles Sessions ↔ History, adding the right
-message reader only while open;
+Content reader only while open;
 Shift+Tab cycles backward. The active pane has a muted accent border and a footer
 focus label, with no filled/bold title. Mouse clicks do not change focus; wheel
 operates the pane under the pointer. Arrows/page keys operate on keyboard focus.
-History has a selected-message marker; the right pane has an independent scrollbar.
+History has a selected-iteration marker; the right pane has an independent scrollbar.
 Help/Quit remain visible. t cycles palettes and saves the choice immediately.
 The default calm palette uses terminal-default text, neutral separators and a
 muted blue focus accent. Existing gtd palettes remain available as options.
