@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-10-12
+
 - Group each request with its answers and actions in one History iteration, selecting the top iteration on session changes.
 - Open the full iteration in Content; allow focus switching for scrolling and keep passive Details outside the focus cycle.
 - Preserve iteration selection as responses grow; remove role filters and duplicate latest exchange details.
