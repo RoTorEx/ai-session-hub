@@ -133,7 +133,7 @@ scan failures show unknown while retaining pending opening history.
 ## Application lifecycle and synchronization
 
 Scan at launch and while focused; no workers/monitoring after exit. Jump leaves the
-TUI open in its original pane. English UI/Russian docs. Separate worker lanes keep
+TUI open in its original pane. English UI and docs. Separate worker lanes keep
 Jump independent of inventory/content requests. Two task-owned JXA helpers reuse
 API bindings while the TUI is open, have five-second reply deadlines and are
 killed/reaped on exit or helper timeout. They never launch iTerm2.

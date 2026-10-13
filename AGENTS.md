@@ -33,3 +33,5 @@ This project uses committed local copies of the Vibecoding Kernel.
   local fix while waiting for a parent-kernel decision.
 - Add project-specific routing here only when it prevents repeated mistakes or
   unnecessary context loading.
+- Write authored code, comments, docs, notes, plans and commit text in English;
+  keep non-English text only for source data, quotations or language fixtures.
