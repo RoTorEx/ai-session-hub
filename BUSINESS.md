@@ -106,7 +106,8 @@ observed opened, ✓ pane opened after readiness, · activity unknown. Questions
 and blockers retain their symbol after opening because they still need user
 attention. Details and help explain symbols; no animation is used.
 
-All linked agents receive a read-only status pass on the content timer. Native
+While Sova has terminal focus, all linked agents receive a read-only status pass
+on the separate activity timer (10 seconds by default). Native
 PID/start/TTY/ancestry is checked once per batch; the terminal bridge confirms
 UUID-selected pane TTY/root and returns only its last 24 visible rows, at most
 8,192 characters. Only parsed state and an in-memory normalized response hash
@@ -120,7 +121,9 @@ Old responses before the latest submitted request are excluded. Unsupported or
 missing markers mean unknown, not idle or successful task completion.
 
 Opening is observed only when iTerm2 is frontmost and the exact linked pane is
-active at a status sample, or after a successful identity-validated Jump. List
+active at a status sample, or after a successful identity-validated Jump. Status
+sampling pauses without Sova terminal focus, so manual visits during the pause
+are not retrospectively acknowledged. Jump still acknowledges immediately. List
 selection/details previews never acknowledge a result. Opening is not proof of
 reading. State lasts only while Sova is open; initial Idle has unknown
 opening history. Work/visits entirely between polls and offscreen response
@@ -129,7 +132,7 @@ scan failures show unknown while retaining pending opening history.
 
 ## Application lifecycle and synchronization
 
-Scan at launch and while open; no workers/monitoring after exit. Jump leaves the
+Scan at launch and while focused; no workers/monitoring after exit. Jump leaves the
 TUI open in its original pane. English UI/Russian docs. Separate worker lanes keep
 Jump independent of inventory/content requests. Two task-owned JXA helpers reuse
 API bindings while the TUI is open, have five-second reply deadlines and are
@@ -138,7 +141,30 @@ killed/reaped on exit or helper timeout. They never launch iTerm2.
 Lightweight native inventory detects exits/starts; only new agent identities,
 manual refresh or the metadata timer require a fresh pane map. Closed agents are
 removed without re-reading all tabs. Git roots are cached until metadata refresh.
-Selected content is read independently, debounced while navigating. Unchanged
+Full selected content is read only in History | Content, on its own five-second
+timer after the 150 ms selection debounce. Entering History invalidates its read
+timer so cached text does not delay the next read. Sessions reads only compact
+all-session status, not full selected content.
+
+Sova enables terminal focus reporting (DECSET 1004). FocusOut pauses new native,
+metadata, status and content requests, also when another pane gains focus while
+Sova remains visible. Already dispatched requests may finish. FocusIn immediately
+requests a fresh pane/process map, status and, in History, full content. A pending
+scan does not discard the forced refresh; session, mode and iteration selection
+are retained when still valid. No visibility polling or new helper is added.
+Without focus events, polling continues until the user-idle timeout. After 60
+seconds without keyboard/mouse input or FocusIn, Sova enters sleep, pauses all
+background requests and drops both helper clients; their osascript processes are
+killed and reaped. Input or FocusIn restarts both clients, forces fresh metadata,
+status and relevant content, and retains selection/mode. Poll replies and agent
+activity do not reset user-idle time. Queued/in-flight work may finish before the
+sleep request is handled. Worker threads remain, blocked on their channels.
+A SLEEP header marks user-idle sleep. Paused/sleeping input waits up to one second
+instead of waking every 100 ms; focus or user input wakes it immediately. Quit
+from sleep exits without warming helpers. Sleeping trades first-use latency for
+released helper memory; the independent Jump lane remains. Helper count is at
+most two regardless of agent count; status work grows with linked panes, while
+full content remains limited to the selected session. Unchanged
 snapshots do not redraw. Routine refresh has no transient Live/Updating indicator.
 Failed scans are distinct from an empty list; prior results are marked stale.
 
@@ -147,7 +173,10 @@ Failed scans are distinct from an empty list; prior results are marked stale.
 | Value | Unit | Meaning / reason | Source / impact / checks |
 |---|---|---|---|
 | 2 | seconds | Native inventory; prompt opening/exit detection at low cost | User correction + measured benchmark; positive config, reconciliation/identity checks |
-| 5 | seconds | All-session status and selected content; lower Apple Event/terminal work | Benchmark tradeoff; on selection first read is immediate after debounce, format-parser tests |
+| 5 | seconds | Full selected content only while History is focused/visible | Preserve reader freshness while avoiding unused Sessions reads; scheduler/reader checks |
+| 10 | seconds | Compact all-session status while Sova has terminal focus | User chose reduced polling; twice the old interval, delayed readiness/opening observation; independent timer tests |
+| 60 | seconds | No user input before releasing both helpers and pausing all scans | User request: reduce idle CPU and runtime memory; keyboard/mouse/FocusIn reset, timer scans do not; scheduler and installed lifecycle checks |
+| 1 | second | Maximum idle event wait while unfocused or sleeping | Reduce wakeups; terminal FocusIn wakes immediately, signal/exit and PTY checks |
 | 30 | seconds | Full pane/location and Git-root map; moves are uncommon | User explanation; new identities/r bypass timer, Jump resolves current UUID independently |
 | 24 / 8,192 | visible rows / characters | Per-pane status tail | Covers provider footer/recent requests with bounded response size; bridge and parser checks |
 | 8 | response lines | Explicit request/blocker phrase search tail | Prioritize recent agent requests over older narrative; heuristic parser fixtures |

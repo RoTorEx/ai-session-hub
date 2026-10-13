@@ -243,3 +243,24 @@ with code 0 and restored the alternate screen. No Jump was induced in this
 check; identity/linking protections retain their existing tests. No user agent
 received input. Installed bytes match the local release build; configuration
 was preserved by the installer.
+
+
+## Polling and helper sleep — 2026-10-13
+
+Installed the Unreleased optimization locally (package version 0.2.3).
+make check passed 36 tests, including History-only content, independent
+10-second status timing, FocusOut/FocusIn refresh, late pre-pause replies,
+user-idle helper shutdown, warming order and independent Jump dispatch.
+Existing configs retain their content interval and inherit activity_seconds=10
+when absent. The installer preserved the actual user's configuration.
+
+An installed controlling PTY verified enabling/disabling terminal focus reports,
+quiet FocusOut, returning through FocusIn and opening History/Content. A second
+installed run waited the actual 60-second user-idle timeout: both helper PIDs
+were reaped, the SLEEP header appeared and only the 5.3 MiB RSS main process
+remained. Keyboard input recreated both helpers and restored the paired history
+view; q exited 0 and reaped the revived helpers. Events were injected through
+the task-owned PTY; real window hiding was not induced. No user agent received
+input and no Jump was induced in these runs. CPU/RSS comparisons and timing
+limits are recorded in PERFORMANCE.md. Task-owned configs/processes were cleaned
+up; installed development binary and user config remain.

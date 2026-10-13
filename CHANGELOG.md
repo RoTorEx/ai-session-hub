@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Read full selected content only in History; refresh compact statuses every 10 seconds on a separate timer.
+- Pause background scans on terminal FocusOut and refresh immediately on FocusIn, retaining mode and selection.
+- Release both iTerm2 helpers after 60 seconds without user activity; input or focus return warms them and refreshes data.
+
 ## [0.2.3] - 2026-10-13
 
 - Use full-height Sessions | Details and History | Content views; f switches both columns while retaining session selection, metadata and Jump.

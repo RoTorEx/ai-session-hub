@@ -8,8 +8,8 @@ use crate::{
 use anyhow::Result;
 use crossterm::{
     event::{
-        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers,
-        MouseEventKind,
+        self, DisableFocusChange, DisableMouseCapture, EnableFocusChange, EnableMouseCapture,
+        Event, KeyCode, KeyEvent, KeyModifiers, MouseEventKind,
     },
     execute,
 };
@@ -33,6 +33,8 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
+
+const HELPER_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum Focus {
@@ -83,6 +85,12 @@ pub struct App {
     detail_scroll: u16,
     help: bool,
     history_view: bool,
+    active: bool,
+    sleeping: bool,
+    last_user_activity: Instant,
+    force_refresh: bool,
+    force_content: bool,
+    force_activity: bool,
     notice: String,
     stale: bool,
     busy: bool,
@@ -113,6 +121,12 @@ impl App {
             detail_scroll: 0,
             help: false,
             history_view: false,
+            active: true,
+            sleeping: false,
+            last_user_activity: Instant::now(),
+            force_refresh: true,
+            force_content: true,
+            force_activity: true,
             notice: "Finding sessions…".into(),
             stale: false,
             busy: false,
@@ -129,6 +143,32 @@ impl App {
             list_area: Rect::default(),
             details_area: Rect::default(),
         }
+    }
+    fn set_active(&mut self, active: bool) {
+        if self.active == active {
+            return;
+        }
+        self.active = active;
+        if active {
+            self.force_refresh = true;
+            self.force_content = true;
+            self.force_activity = true;
+            self.last_content = None;
+            self.last_activity = None;
+            self.dirty = true;
+        }
+    }
+    fn user_activity(&mut self, worker: &Worker) {
+        self.last_user_activity = Instant::now();
+        if self.sleeping {
+            self.sleeping = false;
+            worker.warm();
+            self.force_refresh = true;
+            self.force_content = true;
+            self.force_activity = true;
+            self.dirty = true;
+        }
+        self.set_active(true);
     }
     fn selected(&self) -> Option<&Session> {
         match self.rows.get(self.state.selected()?)? {
@@ -300,9 +340,17 @@ impl App {
     }
 }
 enum Request {
+    Warm,
+    Sleep,
     Refresh(bool),
     Content(Box<Session>),
     Activity(Vec<Session>),
+    Stop,
+}
+enum JumpRequest {
+    Warm,
+    Sleep,
+    Jump(Box<Session>),
     Stop,
 }
 enum Response {
@@ -313,7 +361,7 @@ enum Response {
 }
 struct Worker {
     tx: mpsc::Sender<Request>,
-    jumps: mpsc::Sender<Option<Session>>,
+    jumps: mpsc::Sender<JumpRequest>,
     rx: mpsc::Receiver<Response>,
     joins: Vec<thread::JoinHandle<()>>,
     cancelled: Arc<AtomicBool>,
@@ -322,7 +370,7 @@ impl Worker {
     fn start(metadata_seconds: u64) -> Self {
         let (tx, requests) = mpsc::channel();
         let (results, rx) = mpsc::channel();
-        let (jumps, jump_requests) = mpsc::channel::<Option<Session>>();
+        let (jumps, jump_requests) = mpsc::channel::<JumpRequest>();
         let cancelled = Arc::new(AtomicBool::new(false));
         let stopping = cancelled.clone();
         let jump_stopping = cancelled.clone();
@@ -334,6 +382,14 @@ impl Worker {
                     break;
                 }
                 let response = match request {
+                    Request::Warm => {
+                        let _ = collector.terminal.warm();
+                        continue;
+                    }
+                    Request::Sleep => {
+                        collector.terminal.sleep();
+                        continue;
+                    }
                     Request::Refresh(force) => Response::Refreshed(collector.scan(force)),
                     Request::Content(s) => {
                         Response::Content(s.id.clone(), content::read(&s, &mut collector.terminal))
@@ -352,10 +408,22 @@ impl Worker {
         let jump = thread::spawn(move || {
             let mut terminal = crate::iterm::Client::default();
             let _ = terminal.warm();
-            while let Ok(Some(s)) = jump_requests.recv() {
+            while let Ok(request) = jump_requests.recv() {
                 if jump_stopping.load(Ordering::Relaxed) {
                     break;
                 }
+                let s = match request {
+                    JumpRequest::Warm => {
+                        let _ = terminal.warm();
+                        continue;
+                    }
+                    JumpRequest::Sleep => {
+                        terminal.sleep();
+                        continue;
+                    }
+                    JumpRequest::Jump(s) => s,
+                    JumpRequest::Stop => break,
+                };
                 if jump_results
                     .send(Response::Jumped(
                         s.id.clone(),
@@ -375,9 +443,20 @@ impl Worker {
             cancelled,
         }
     }
-    fn refresh(&self, app: &mut App, force: bool) {
+    fn sleep(&self) {
+        let _ = self.tx.send(Request::Sleep);
+        let _ = self.jumps.send(JumpRequest::Sleep);
+    }
+    fn warm(&self) {
+        let _ = self.tx.send(Request::Warm);
+        let _ = self.jumps.send(JumpRequest::Warm);
+    }
+    fn refresh(&self, app: &mut App, force: bool) -> bool {
         if !app.busy && self.tx.send(Request::Refresh(force)).is_ok() {
             app.busy = true;
+            true
+        } else {
+            false
         }
     }
     fn jump(&self, app: &mut App) {
@@ -385,7 +464,7 @@ impl Worker {
             return;
         }
         if let Some(s) = app.selected().cloned()
-            && self.jumps.send(Some(s)).is_ok()
+            && self.jumps.send(JumpRequest::Jump(Box::new(s))).is_ok()
         {
             app.jump_pending = true;
             app.notice = "Opening session…".into();
@@ -397,16 +476,61 @@ impl Drop for Worker {
     fn drop(&mut self) {
         self.cancelled.store(true, Ordering::Relaxed);
         let _ = self.tx.send(Request::Stop);
-        let _ = self.jumps.send(None);
+        let _ = self.jumps.send(JumpRequest::Stop);
         for h in self.joins.drain(..) {
             let _ = h.join();
         }
     }
 }
+fn poll_background(app: &mut App, worker: &Worker, config: &Config) {
+    if !app.sleeping && app.last_user_activity.elapsed() >= HELPER_IDLE_TIMEOUT {
+        app.sleeping = true;
+        app.dirty = true;
+        worker.sleep();
+    }
+    if !app.active || app.sleeping {
+        return;
+    }
+    if (app.force_refresh
+        || app
+            .last_scan
+            .is_some_and(|t| t.elapsed() >= Duration::from_secs(config.refresh_seconds)))
+        && worker.refresh(app, app.force_refresh)
+    {
+        app.force_refresh = false;
+    }
+    if app.history_view
+        && !app.content_pending
+        && app.selected_since.elapsed() >= Duration::from_millis(150)
+        && (app.force_content
+            || app
+                .last_content
+                .is_none_or(|t| t.elapsed() >= Duration::from_secs(config.content_seconds)))
+        && let Some(s) = app.selected().cloned()
+        && worker.tx.send(Request::Content(Box::new(s))).is_ok()
+    {
+        app.content_pending = true;
+        app.force_content = false;
+    }
+    if !app.activity_pending
+        && !app.sessions.is_empty()
+        && (app.force_activity
+            || app
+                .last_activity
+                .is_none_or(|t| t.elapsed() >= Duration::from_secs(config.activity_seconds)))
+        && worker
+            .tx
+            .send(Request::Activity(app.sessions.clone()))
+            .is_ok()
+    {
+        app.activity_pending = true;
+        app.force_activity = false;
+    }
+}
 struct TerminalGuard;
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
-        let _ = execute!(std::io::stdout(), DisableMouseCapture);
+        let _ = execute!(std::io::stdout(), DisableMouseCapture, DisableFocusChange);
         ratatui::restore();
     }
 }
@@ -420,9 +544,8 @@ pub fn run(config: Config, mut theme: Theme) -> Result<()> {
         let worker = Worker::start(config.metadata_seconds);
         let mut terminal = ratatui::try_init()?;
         let _guard = TerminalGuard;
-        execute!(std::io::stdout(), EnableMouseCapture)?;
+        execute!(std::io::stdout(), EnableMouseCapture, EnableFocusChange)?;
         let mut app = App::new();
-        worker.refresh(&mut app, true);
         while !terminate.load(Ordering::Relaxed) {
             while let Ok(response) = worker.rx.try_recv() {
                 match response {
@@ -480,48 +603,31 @@ pub fn run(config: Config, mut theme: Theme) -> Result<()> {
                     }
                 }
             }
-            if app
-                .last_scan
-                .is_some_and(|t| t.elapsed() >= Duration::from_secs(config.refresh_seconds))
-            {
-                worker.refresh(&mut app, false);
-            }
-            if !app.content_pending
-                && app.selected_since.elapsed() >= Duration::from_millis(150)
-                && app
-                    .last_content
-                    .is_none_or(|t| t.elapsed() >= Duration::from_secs(config.content_seconds))
-                && let Some(s) = app.selected().cloned()
-                && worker.tx.send(Request::Content(Box::new(s))).is_ok()
-            {
-                app.content_pending = true;
-            }
-            if !app.activity_pending
-                && !app.sessions.is_empty()
-                && app
-                    .last_activity
-                    .is_none_or(|t| t.elapsed() >= Duration::from_secs(config.content_seconds))
-                && worker
-                    .tx
-                    .send(Request::Activity(app.sessions.clone()))
-                    .is_ok()
-            {
-                app.activity_pending = true;
-            }
+            poll_background(&mut app, &worker, &config);
             if app.dirty {
                 terminal.draw(|f| draw(f, &mut app, &theme))?;
                 app.dirty = false;
             }
-            if event::poll(Duration::from_millis(100))? {
+            if event::poll(Duration::from_millis(if app.active && !app.sleeping {
+                100
+            } else {
+                1000
+            }))? {
                 match event::read()? {
                     Event::Key(k) if k.kind == event::KeyEventKind::Press => {
                         app.dirty = true;
                         if key(k, &mut app, &worker, &mut theme) {
                             break;
                         }
+                        app.user_activity(&worker);
                     }
+                    Event::FocusLost => app.set_active(false),
+                    Event::FocusGained => app.user_activity(&worker),
                     Event::Resize(_, _) => app.dirty = true,
-                    Event::Mouse(m) => mouse(m, &mut app),
+                    Event::Mouse(m) => {
+                        app.user_activity(&worker);
+                        mouse(m, &mut app);
+                    }
                     _ => {}
                 }
             }
@@ -612,6 +718,10 @@ fn selected_entry(app: &App) -> Option<HistoryEntry> {
         .cloned()
 }
 fn switch_view(app: &mut App, history_view: bool) {
+    if history_view && !app.history_view {
+        app.force_content = true;
+        app.last_content = None;
+    }
     app.history_view = history_view;
     app.focus = if history_view {
         Focus::History
@@ -1027,10 +1137,11 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
         ),
         Span::styled(
             format!(
-                " · {} · {} sessions{}{filter}",
+                " · {} · {} sessions{}{}{filter}",
                 t.name,
                 app.sessions.len(),
-                if app.stale { " · STALE" } else { "" }
+                if app.stale { " · STALE" } else { "" },
+                if app.sleeping { " · SLEEP" } else { "" }
             ),
             Style::default().fg(t.status),
         ),
@@ -1203,6 +1314,8 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
             Paragraph::new(
                 "f: switch Sessions | Details ↔ History | Content
 Startup: Sessions. Both panels change together; selected session is retained.
+Polling pauses without terminal focus; returning refreshes immediately.
+After 60 seconds without input, helpers exit; input/focus return wakes them.
 History header keeps session name, provider/status and folder visible.
 Tab / Shift+Tab: switch History ↔ Content for scrolling
 ↑/↓ or j/k: select a session/iteration or scroll Content
@@ -1472,6 +1585,107 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n")
+    }
+    fn recording_worker() -> (Worker, mpsc::Receiver<Request>, mpsc::Receiver<JumpRequest>) {
+        let (tx, requests) = mpsc::channel();
+        let (jumps, jump_requests) = mpsc::channel();
+        let (_, rx) = mpsc::channel();
+        (
+            Worker {
+                tx,
+                jumps,
+                rx,
+                joins: vec![],
+                cancelled: Arc::new(AtomicBool::new(false)),
+            },
+            requests,
+            jump_requests,
+        )
+    }
+    #[test]
+    fn background_reads_follow_mode_and_independent_status_interval() {
+        let mut app = content_app();
+        let (worker, requests, _) = recording_worker();
+        let config = Config::default();
+        app.force_refresh = false;
+        app.force_activity = false;
+        app.last_scan = Some(Instant::now());
+        app.last_activity = Some(Instant::now() - Duration::from_secs(6));
+        app.selected_since = Instant::now() - Duration::from_secs(1);
+        poll_background(&mut app, &worker, &config);
+        assert!(requests.try_recv().is_err());
+        switch_view(&mut app, true);
+        poll_background(&mut app, &worker, &config);
+        assert!(matches!(requests.try_recv(), Ok(Request::Content(s)) if s.id == "a"));
+        assert!(requests.try_recv().is_err());
+        app.content_pending = false;
+        app.last_content = Some(Instant::now());
+        app.last_activity = Some(Instant::now() - Duration::from_secs(11));
+        poll_background(&mut app, &worker, &config);
+        assert!(matches!(requests.try_recv(), Ok(Request::Activity(s)) if s.len() == 2));
+        assert!(requests.try_recv().is_err());
+        switch_view(&mut app, false);
+        app.last_content = None;
+        poll_background(&mut app, &worker, &config);
+        assert!(requests.try_recv().is_err());
+    }
+    #[test]
+    fn losing_focus_pauses_scans_and_returning_refreshes_even_after_inflight_work() {
+        let mut app = content_app();
+        let selected = app.row_key();
+        let (worker, requests, jumps) = recording_worker();
+        let config = Config::default();
+        switch_view(&mut app, true);
+        app.selected_since = Instant::now() - Duration::from_secs(1);
+        app.set_active(false);
+        poll_background(&mut app, &worker, &config);
+        assert!(requests.try_recv().is_err());
+        worker.jump(&mut app);
+        assert!(matches!(jumps.try_recv(), Ok(JumpRequest::Jump(s)) if s.id == "a"));
+        app.busy = true;
+        app.content_pending = true;
+        app.activity_pending = true;
+        app.set_active(true);
+        poll_background(&mut app, &worker, &config);
+        assert!(requests.try_recv().is_err());
+        assert!(app.force_refresh);
+        app.busy = false;
+        app.content_pending = false;
+        app.activity_pending = false;
+        // Late replies from before the pause must not suppress the fresh reads.
+        app.last_content = Some(Instant::now());
+        app.last_activity = Some(Instant::now());
+        poll_background(&mut app, &worker, &config);
+        assert!(matches!(requests.try_recv(), Ok(Request::Refresh(true))));
+        assert!(matches!(requests.try_recv(), Ok(Request::Content(_))));
+        assert!(matches!(requests.try_recv(), Ok(Request::Activity(_))));
+        assert!(requests.try_recv().is_err());
+        assert!(!app.force_refresh);
+        assert!(app.history_view);
+        assert_eq!(app.row_key(), selected);
+    }
+    #[test]
+    fn user_idle_releases_both_helpers_and_input_warms_before_refresh() {
+        let mut app = content_app();
+        let selected = app.row_key();
+        let (worker, requests, jumps) = recording_worker();
+        switch_view(&mut app, true);
+        app.last_user_activity = Instant::now() - HELPER_IDLE_TIMEOUT;
+        poll_background(&mut app, &worker, &Config::default());
+        assert!(app.sleeping);
+        assert!(matches!(requests.try_recv(), Ok(Request::Sleep)));
+        assert!(matches!(jumps.try_recv(), Ok(JumpRequest::Sleep)));
+        poll_background(&mut app, &worker, &Config::default());
+        assert!(requests.try_recv().is_err());
+        assert!(jumps.try_recv().is_err());
+        app.user_activity(&worker);
+        assert!(!app.sleeping);
+        assert!(matches!(requests.try_recv(), Ok(Request::Warm)));
+        assert!(matches!(jumps.try_recv(), Ok(JumpRequest::Warm)));
+        poll_background(&mut app, &worker, &Config::default());
+        assert!(matches!(requests.try_recv(), Ok(Request::Refresh(true))));
+        assert!(app.history_view);
+        assert_eq!(app.row_key(), selected);
     }
     #[test]
     fn paired_views_preserve_session_and_allow_content_scrolling() {

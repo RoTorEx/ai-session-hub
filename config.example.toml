@@ -1,4 +1,5 @@
 theme = "calm"
 refresh_seconds = 2
 content_seconds = 5
+activity_seconds = 10
 metadata_seconds = 30

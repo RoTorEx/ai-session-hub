@@ -12,6 +12,7 @@ pub struct Config {
     pub refresh_seconds: u64,
     pub metadata_seconds: u64,
     pub content_seconds: u64,
+    pub activity_seconds: u64,
 }
 impl Default for Config {
     fn default() -> Self {
@@ -20,6 +21,7 @@ impl Default for Config {
             refresh_seconds: 2,
             metadata_seconds: 30,
             content_seconds: 5,
+            activity_seconds: 10,
         }
     }
 }
@@ -43,8 +45,14 @@ pub fn load() -> Result<Config> {
 }
 fn parse(text: &str) -> Result<Config> {
     let c: Config = toml::from_str(text).context("Invalid configuration")?;
-    if c.refresh_seconds == 0 || c.metadata_seconds == 0 || c.content_seconds == 0 {
-        bail!("refresh_seconds, metadata_seconds and content_seconds must be positive");
+    if c.refresh_seconds == 0
+        || c.metadata_seconds == 0
+        || c.content_seconds == 0
+        || c.activity_seconds == 0
+    {
+        bail!(
+            "refresh_seconds, metadata_seconds, content_seconds and activity_seconds must be positive"
+        );
     }
     crate::theme::get(&c.theme)?;
     Ok(c)
@@ -108,6 +116,10 @@ mod tests {
     #[test]
     fn rejects_zero_and_unknown_theme_preserves_defaults() {
         assert!(parse("refresh_seconds=0").is_err());
+        assert!(parse("activity_seconds=0").is_err());
+        let legacy = parse("content_seconds=3").unwrap();
+        assert_eq!(legacy.content_seconds, 3);
+        assert_eq!(legacy.activity_seconds, 10);
         assert!(parse("theme='unknown'").is_err());
         assert_eq!(parse("").unwrap().refresh_seconds, 2);
     }

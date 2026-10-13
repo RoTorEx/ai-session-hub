@@ -108,6 +108,9 @@ impl Client {
             .context("Invalid iTerm2 result")?
             .to_owned())
     }
+    pub fn sleep(&mut self) {
+        self.helper.take();
+    }
     pub fn warm(&mut self) -> Result<()> {
         self.call(&["ping"])?;
         Ok(())

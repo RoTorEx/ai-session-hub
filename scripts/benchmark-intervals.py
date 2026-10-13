@@ -38,11 +38,11 @@ def children(pid):
     result = subprocess.run(['/usr/bin/pgrep', '-P', str(pid)], capture_output=True, text=True)
     return [int(x) for x in result.stdout.split()]
 
-def run(binary, root, seconds, profile, iterm):
+def run(binary, root, seconds, profile, iterm, view, activity):
     native, content, metadata = profile
     with tempfile.TemporaryDirectory(prefix='interval-', dir=root) as directory:
         config = Path(directory) / 'config.toml'
-        config.write_text(f'theme="classic"\nrefresh_seconds={native}\ncontent_seconds={content}\nmetadata_seconds={metadata}\n')
+        config.write_text(f'theme="classic"\nrefresh_seconds={native}\ncontent_seconds={content}\nmetadata_seconds={metadata}\nactivity_seconds={activity}\n')
         master, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 35, 140, 0, 0))
         def attach():
@@ -65,8 +65,20 @@ def run(binary, root, seconds, profile, iterm):
                 if process.poll() is not None:
                     raise RuntimeError('TUI exited unexpectedly')
         try:
-            drain(3)  # Exclude initialization and first content read.
-            owned = [process.pid, *children(process.pid)]
+            drain(3)  # Exclude initialization.
+            if view == 'history':
+                os.write(master, b'f')
+            elif view == 'paused':
+                os.write(master, b'\x1b[O')  # Same FocusOut event reported by iTerm2.
+            initial_helpers = children(process.pid)
+            owned = [process.pid, *initial_helpers]
+            drain(62 if view == 'idle' else 2)  # Settle focus/in-flight work or the real 60s user-idle timeout.
+            if view == 'idle':
+                assert not children(process.pid), 'Idle helpers were not released'
+                assert all(task(pid)[0] == 0 for pid in initial_helpers), 'Old helper survived sleep'
+                owned = [process.pid]
+            else:
+                owned = [process.pid, *children(process.pid)]
             start = [task(pid) for pid in owned]
             terminal_start = task(iterm)[0]
             wall = time.monotonic()
@@ -76,7 +88,7 @@ def run(binary, root, seconds, profile, iterm):
             after = [task(pid) for pid in owned]
             cpu = sum(a[0]-b[0] for a, b in zip(after, start))
             terminal_cpu = task(iterm)[0] - terminal_start
-            result = dict(profile=f'{native}/{content}/{metadata}', seconds=round(elapsed, 2),
+            result = dict(profile=f'{native}/{content}/{metadata}', activity_seconds=activity, view=view, helper_count=len(owned)-1, seconds=round(elapsed, 2),
                           owned_cpu_pct_one_core=round(100*cpu/elapsed, 3),
                           observed_iterm_cpu_pct_one_core=round(100*terminal_cpu/elapsed, 3),
                           owned_rss_mib=round(sum(a[1] for a in after)/1024/1024, 1),
@@ -102,10 +114,16 @@ def run(binary, root, seconds, profile, iterm):
 parser = argparse.ArgumentParser()
 parser.add_argument('--binary', type=Path, required=True)
 parser.add_argument('--seconds', type=float, default=15)
+parser.add_argument('--profile', help='One refresh/content/metadata profile, e.g. 2/5/30')
+parser.add_argument('--activity-seconds', type=int, default=10)
+parser.add_argument('--view', choices=['sessions', 'history', 'paused', 'idle'], default='sessions')
 args = parser.parse_args()
 assert args.seconds >= 5
 root = Path.home() / 'construction_side/sova'
 root.mkdir(parents=True, exist_ok=True)
 iterm = int(subprocess.check_output(['/usr/bin/pgrep', '-x', 'iTerm2'], text=True).strip())
-for profile in [(1, 1, 1), (2, 2, 2), (5, 5, 5), (2, 5, 30)]:
-    run(args.binary.resolve(), root, args.seconds, profile, iterm)
+profiles = [tuple(int(x) for x in args.profile.split('/'))] if args.profile else [(1, 1, 1), (2, 2, 2), (5, 5, 5), (2, 5, 30)]
+assert args.activity_seconds > 0
+for profile in profiles:
+    assert len(profile) == 3 and all(x > 0 for x in profile)
+    run(args.binary.resolve(), root, args.seconds, profile, iterm, args.view, args.activity_seconds)
