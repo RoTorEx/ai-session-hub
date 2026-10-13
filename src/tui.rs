@@ -42,19 +42,6 @@ enum Focus {
     Reader,
 }
 impl Focus {
-    fn next(self, backwards: bool, reader_open: bool) -> Self {
-        if !reader_open {
-            return match self {
-                Self::Sessions => Self::History,
-                Self::History | Self::Reader => Self::Sessions,
-            };
-        }
-        match (self, backwards) {
-            (Self::Sessions, false) | (Self::Reader, true) => Self::History,
-            (Self::History, false) | (Self::Sessions, true) => Self::Reader,
-            _ => Self::Sessions,
-        }
-    }
     fn label(self) -> &'static str {
         match self {
             Self::Sessions => "Sessions",
@@ -95,7 +82,7 @@ pub struct App {
     history_area: Rect,
     detail_scroll: u16,
     help: bool,
-    expanded: bool,
+    history_view: bool,
     notice: String,
     stale: bool,
     busy: bool,
@@ -125,7 +112,7 @@ impl App {
             history_area: Rect::default(),
             detail_scroll: 0,
             help: false,
-            expanded: false,
+            history_view: false,
             notice: "Finding sessions…".into(),
             stale: false,
             busy: false,
@@ -155,10 +142,8 @@ impl App {
     fn selection_changed(&mut self) {
         self.detail_scroll = 0;
         self.history_state = ListState::default();
-        self.expanded = false;
-        if self.focus == Focus::Reader {
-            self.focus = Focus::History;
-        }
+        self.history_view = false;
+        self.focus = Focus::Sessions;
         self.selected_since = Instant::now();
         self.last_content = None;
         self.content = None;
@@ -188,7 +173,6 @@ impl App {
         });
         self.history_state.select(index);
         if previous.is_some() && matched.is_none() {
-            self.expanded = false;
             if self.focus == Focus::Reader {
                 self.focus = Focus::History;
             }
@@ -627,17 +611,24 @@ fn selected_entry(app: &App) -> Option<HistoryEntry> {
         .get(app.history_state.selected().unwrap_or(0))
         .cloned()
 }
-fn expand(app: &mut App, expanded: bool) {
-    if expanded && (app.focus != Focus::History || selected_entry(app).is_none()) {
-        app.notice = "Use f to focus History, select an iteration, then press e.".into();
-        return;
-    }
-    app.expanded = expanded;
+fn switch_view(app: &mut App, history_view: bool) {
+    app.history_view = history_view;
+    app.focus = if history_view {
+        Focus::History
+    } else {
+        Focus::Sessions
+    };
     app.detail_scroll = 0;
-    if !expanded && app.focus == Focus::Reader {
-        app.focus = Focus::History;
-    }
     app.notice.clear();
+}
+fn toggle_reader(app: &mut App) {
+    if app.history_view {
+        app.focus = if app.focus == Focus::Reader {
+            Focus::History
+        } else {
+            Focus::Reader
+        };
+    }
 }
 fn key(k: KeyEvent, app: &mut App, worker: &Worker, theme: &mut Theme) -> bool {
     if k.modifiers.contains(KeyModifiers::CONTROL) && k.code == KeyCode::Char('c') {
@@ -673,17 +664,18 @@ fn key(k: KeyEvent, app: &mut App, worker: &Worker, theme: &mut Theme) -> bool {
     }
     match k.code {
         KeyCode::Char('q' | 'й') => return true,
-        KeyCode::Esc if app.expanded => expand(app, false),
+        KeyCode::Esc if app.history_view => switch_view(app, false),
         KeyCode::Esc => return true,
-        KeyCode::Char('/') => app.editing = true,
-        KeyCode::Char('?') => app.help = true,
-        KeyCode::Tab | KeyCode::Char('f' | 'F' | 'а' | 'А') => {
-            app.focus = app.focus.next(false, app.expanded)
+        KeyCode::Char('/') => {
+            switch_view(app, false);
+            app.editing = true;
         }
-        KeyCode::BackTab => app.focus = app.focus.next(true, app.expanded),
+        KeyCode::Char('?') => app.help = true,
+        KeyCode::Char('f' | 'F' | 'а' | 'А') => switch_view(app, !app.history_view),
+        KeyCode::Tab | KeyCode::BackTab => toggle_reader(app),
         KeyCode::Right if app.focus != Focus::Reader => navigate(app, 1),
         KeyCode::Left if app.focus != Focus::Reader => navigate(app, -1),
-        KeyCode::Char('e' | 'у') => expand(app, !app.expanded),
+        KeyCode::Char('e' | 'у') => toggle_reader(app),
         KeyCode::Char('t' | 'е') => {
             let index = crate::theme::NAMES
                 .iter()
@@ -704,7 +696,7 @@ fn key(k: KeyEvent, app: &mut App, worker: &Worker, theme: &mut Theme) -> bool {
             app.last_activity = None;
         }
         KeyCode::Char('o' | 'щ') => worker.jump(app),
-        KeyCode::Enter if app.focus == Focus::History => expand(app, !app.expanded),
+        KeyCode::Enter if app.focus == Focus::History => toggle_reader(app),
         KeyCode::Enter if app.focus == Focus::Sessions => worker.jump(app),
         KeyCode::Up | KeyCode::Char('k' | 'л') => navigate(app, -1),
         KeyCode::Down | KeyCode::Char('j' | 'о') => navigate(app, 1),
@@ -851,7 +843,13 @@ fn project_label(app: &App, path: &str) -> String {
 }
 fn reader(app: &App, t: &Theme) -> Vec<Line<'static>> {
     let Some(entry) = selected_entry(app) else {
-        return vec![Line::raw("Iteration unavailable")];
+        let message = match selected_content(app) {
+            Some(Err(error)) => format!("Content unavailable: {error}"),
+            Some(Ok(_)) => "No iteration in the visible terminal snapshot".into(),
+            None if app.selected().is_some() => "Reading selected terminal…".into(),
+            None => "No session selected · f returns to Sessions".into(),
+        };
+        return vec![Line::raw(message)];
     };
     let mut lines = Vec::new();
     for message in &entry.messages {
@@ -1008,7 +1006,7 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
         return;
     }
     let outer = Layout::vertical([
-        Constraint::Length(1),
+        Constraint::Length(if app.history_view { 3 } else { 1 }),
         Constraint::Min(1),
         Constraint::Length(2),
     ])
@@ -1022,120 +1020,130 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
     } else {
         String::new()
     };
+    let mut heading = vec![Line::from(vec![
+        Span::styled(
+            format!("Sova v{}", env!("CARGO_PKG_VERSION")),
+            Style::default().fg(t.task).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!(
+                " · {} · {} sessions{}{filter}",
+                t.name,
+                app.sessions.len(),
+                if app.stale { " · STALE" } else { "" }
+            ),
+            Style::default().fg(t.status),
+        ),
+    ])];
+    if app.history_view {
+        if let Some(session) = app.selected() {
+            let progress = app.activity.get(&session.id).cloned().unwrap_or_default();
+            heading.push(Line::raw(format!(
+                "{} · {} · {} {} · o Open",
+                session_title(session),
+                session.provider,
+                progress.symbol(),
+                progress.label()
+            )));
+            heading.push(Line::raw(format!(
+                "Folder: {}",
+                safe_text(session.cwd.as_deref().unwrap_or("Unknown"))
+            )));
+        } else {
+            heading.push(Line::raw("No session selected · f Sessions"));
+        }
+    }
     f.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled(
-                format!("Sova v{}", env!("CARGO_PKG_VERSION")),
-                Style::default().fg(t.task).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                format!(
-                    " · {} · {} sessions{}{filter}",
-                    t.name,
-                    app.sessions.len(),
-                    if app.stale { " · STALE" } else { "" }
-                ),
-                Style::default().fg(t.status),
-            ),
-        ])),
+        Paragraph::new(heading).style(Style::default().fg(t.task)),
         outer[0],
     );
-    if area.width >= 90 {
-        let columns = Layout::horizontal([Constraint::Percentage(60), Constraint::Percentage(40)])
-            .split(outer[1]);
-        let desired = (app.rows.len() as u16)
-            .saturating_add(2)
-            .max(5)
-            .min(columns[0].height.saturating_mul(2) / 5)
-            .max(3);
-        let left =
-            Layout::vertical([Constraint::Length(desired), Constraint::Min(4)]).split(columns[0]);
-        app.list_area = left[0];
-        app.history_area = left[1];
-        app.details_area = columns[1];
-    } else {
-        let rows = Layout::vertical([
-            Constraint::Length((outer[1].height / 3).max(3)),
-            Constraint::Length((outer[1].height / 3).max(3)),
-            Constraint::Min(3),
-        ])
+    let columns = Layout::horizontal([Constraint::Percentage(40), Constraint::Percentage(60)])
         .split(outer[1]);
-        app.list_area = rows[0];
-        app.details_area = rows[1];
-        app.history_area = rows[2];
-    }
-    let selected = app.state.selected();
-    let items: Vec<_> = app
-        .rows
-        .iter()
-        .enumerate()
-        .map(|(row_index, row)| match row {
-            Row::Project(p) => ListItem::new(Line::styled(
-                format!(" {}", project_label(app, p)),
-                Style::default().fg(t.project),
-            )),
-            Row::Session(i) => {
-                let s = &app.sessions[*i];
-                let active = selected == Some(row_index);
-                let progress = app.activity.get(&s.id).cloned().unwrap_or_default();
-                let color = match progress.label() {
-                    "Approval" | "Blocked" | "Question" => t.error,
-                    "Working" => t.info,
-                    "Ready" => t.project,
-                    _ => t.status,
-                };
-                ListItem::new(Line::from(vec![
-                    Span::styled(
-                        format!(
-                            "  {} {} ",
-                            if matches!(app.rows.get(row_index + 1), Some(Row::Session(_))) {
-                                "├"
-                            } else {
-                                "└"
-                            },
-                            progress.symbol()
-                        ),
-                        Style::default().fg(if active { t.selected_fg } else { color }),
-                    ),
-                    Span::styled(
-                        format!("{:<7} ", s.provider.to_string()),
-                        Style::default().fg(if active { t.selected_fg } else { t.status }),
-                    ),
-                    Span::styled(
-                        session_title(s),
-                        Style::default().fg(if active { t.selected_fg } else { t.task }),
-                    ),
-                ]))
-            }
-        })
-        .collect();
-    let block = pane_block("Sessions", Focus::Sessions, app, t);
-    if items.is_empty() {
-        f.render_widget(
-            Paragraph::new(if app.last_scan.is_none() {
-                "Finding sessions…"
-            } else if app.filter.is_empty() {
-                "No live sessions"
-            } else {
-                "No matching sessions"
-            })
-            .block(block),
-            app.list_area,
-        );
+    app.details_area = columns[1];
+    app.list_area = if app.history_view {
+        Rect::default()
     } else {
-        f.render_stateful_widget(
-            List::new(items)
-                .block(block)
-                .highlight_style(Style::default().bg(t.selected_bg).fg(t.selected_fg))
-                .highlight_symbol("› ")
-                .scroll_padding(1),
-            app.list_area,
-            &mut app.state,
-        );
+        columns[0]
+    };
+    app.history_area = if app.history_view {
+        columns[0]
+    } else {
+        Rect::default()
+    };
+    if !app.history_view {
+        let selected = app.state.selected();
+        let items: Vec<_> = app
+            .rows
+            .iter()
+            .enumerate()
+            .map(|(row_index, row)| match row {
+                Row::Project(p) => ListItem::new(Line::styled(
+                    format!(" {}", project_label(app, p)),
+                    Style::default().fg(t.project),
+                )),
+                Row::Session(i) => {
+                    let s = &app.sessions[*i];
+                    let active = selected == Some(row_index);
+                    let progress = app.activity.get(&s.id).cloned().unwrap_or_default();
+                    let color = match progress.label() {
+                        "Approval" | "Blocked" | "Question" => t.error,
+                        "Working" => t.info,
+                        "Ready" => t.project,
+                        _ => t.status,
+                    };
+                    ListItem::new(Line::from(vec![
+                        Span::styled(
+                            format!(
+                                "  {} {} ",
+                                if matches!(app.rows.get(row_index + 1), Some(Row::Session(_))) {
+                                    "├"
+                                } else {
+                                    "└"
+                                },
+                                progress.symbol()
+                            ),
+                            Style::default().fg(if active { t.selected_fg } else { color }),
+                        ),
+                        Span::styled(
+                            format!("{:<7} ", s.provider.to_string()),
+                            Style::default().fg(if active { t.selected_fg } else { t.status }),
+                        ),
+                        Span::styled(
+                            session_title(s),
+                            Style::default().fg(if active { t.selected_fg } else { t.task }),
+                        ),
+                    ]))
+                }
+            })
+            .collect();
+        let block = pane_block("Sessions", Focus::Sessions, app, t);
+        if items.is_empty() {
+            f.render_widget(
+                Paragraph::new(if app.last_scan.is_none() {
+                    "Finding sessions…"
+                } else if app.filter.is_empty() {
+                    "No live sessions"
+                } else {
+                    "No matching sessions"
+                })
+                .block(block),
+                app.list_area,
+            );
+        } else {
+            f.render_stateful_widget(
+                List::new(items)
+                    .block(block)
+                    .highlight_style(Style::default().bg(t.selected_bg).fg(t.selected_fg))
+                    .highlight_symbol("› ")
+                    .scroll_padding(1),
+                app.list_area,
+                &mut app.state,
+            );
+        }
     }
     let block = pane_block(
-        if app.expanded {
-            "Content · f scroll · Esc close"
+        if app.history_view {
+            "Content · Tab scroll"
         } else {
             "Details"
         },
@@ -1143,26 +1151,22 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
         app,
         t,
     );
-    let lines = if app.expanded {
+    let lines = if app.history_view {
         reader(app, t)
     } else {
         details(app, t)
     };
     scroll_pane(f, app.details_area, lines, block, &mut app.detail_scroll);
-    draw_history(f, app, t);
+    if app.history_view {
+        draw_history(f, app, t);
+    }
     let context = match app.focus {
-        Focus::Sessions => "↑↓ select · Enter open",
-        Focus::History => {
-            if app.expanded {
-                "↑↓ iteration · f scroll · e close"
-            } else {
-                "↑↓ iteration · e expand"
-            }
-        }
-        Focus::Reader => "↑↓ scroll",
+        Focus::Sessions => "↑↓ select · Enter open · f history",
+        Focus::History => "↑↓ iteration · Tab scroll · o open",
+        Focus::Reader => "↑↓ scroll · Tab history · o open",
     };
     f.render_widget(
-        Paragraph::new(format!("f Focus: {} · {context}", app.focus.label()))
+        Paragraph::new(format!("{} · {context}", app.focus.label()))
             .style(Style::default().fg(t.task)),
         Rect {
             height: 1,
@@ -1197,15 +1201,17 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
         f.render_widget(ratatui::widgets::Clear, outer[1]);
         f.render_widget(
             Paragraph::new(
-                "f / Tab: cycle Sessions ↔ History; include Content when open
-Startup focus: Sessions. Mouse does not change keyboard focus.
-↑/↓ or j/k: select a session/iteration or scroll the right pane
+                "f: switch Sessions | Details ↔ History | Content
+Startup: Sessions. Both panels change together; selected session is retained.
+History header keeps session name, provider/status and folder visible.
+Tab / Shift+Tab: switch History ↔ Content for scrolling
+↑/↓ or j/k: select a session/iteration or scroll Content
 ←/→: previous/next session or history iteration
-e / Enter in History: expand selected iteration in the right pane
-Esc / e: close the iteration and restore session Details
+e / Enter in History: focus Content; e returns to History
+Esc in History/Content: return to Sessions | Details
 History: oldest at top, newest at bottom; start at the top
 Each iteration groups You, Action and Agent; previews of 100 characters
-Wheel: select iterations or scroll under the pointer, without changing focus
+Wheel: navigate or scroll under the pointer without changing focus
 Enter in Sessions / o: open exact existing iTerm2 pane
 t: next theme (saved and applied immediately)
 /: search · r: refresh · q/Ctrl+C: exit
@@ -1356,8 +1362,6 @@ mod tests {
             &format!("Sova v{}", env!("CARGO_PKG_VERSION")),
             "SESSION",
             "TERMINAL",
-            "Request",
-            "Answer",
         ] {
             assert!(text.contains(expected), "{expected}");
         }
@@ -1371,6 +1375,18 @@ mod tests {
         assert!(!text.contains("LATEST EXCHANGE"));
         assert!(!text.contains("Git root"));
         assert!(!text.contains("Pane UUID"));
+        assert!(!text.contains("Request"));
+        switch_view(&mut app, true);
+        term.draw(|f| draw(f, &mut app, &t)).unwrap();
+        let rendered = term
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|c| c.symbol())
+            .collect::<String>();
+        assert!(rendered.contains("Request") && rendered.contains("Answer"));
+        assert!(!rendered.contains("TERMINAL"));
     }
     #[test]
     fn render_small_empty_and_long_details_with_bounded_scroll() {
@@ -1394,7 +1410,7 @@ mod tests {
                 context: String::new(),
             }),
         ));
-        app.expanded = true;
+        app.history_view = true;
         app.detail_scroll = u16::MAX;
         let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 25)).unwrap();
         term.draw(|f| draw(f, &mut app, &crate::theme::get("classic").unwrap()))
@@ -1458,7 +1474,7 @@ mod tests {
             .join("\n")
     }
     #[test]
-    fn focus_and_message_reader_follow_keyboard_selection() {
+    fn paired_views_preserve_session_and_allow_content_scrolling() {
         let mut app = content_app();
         let worker = inert_worker();
         let mut t = crate::theme::get("calm").unwrap();
@@ -1470,59 +1486,37 @@ mod tests {
                 t
             ));
         };
-        assert_eq!(app.focus, Focus::Sessions);
-        press(KeyCode::Down, &mut app, &mut t);
-        assert_eq!(app.selected().unwrap().id, "b");
-        assert!(!app.expanded);
-        app = content_app();
-        press(KeyCode::Char('f'), &mut app, &mut t);
-        assert_eq!(app.focus, Focus::History);
-        assert_eq!(history_entries(&app).len(), 1);
+        let selected = app.row_key();
         press(KeyCode::Tab, &mut app, &mut t);
         assert_eq!(app.focus, Focus::Sessions);
-        press(KeyCode::BackTab, &mut app, &mut t);
-        assert_eq!(app.focus, Focus::History);
-        press(KeyCode::BackTab, &mut app, &mut t);
-        assert_eq!(app.focus, Focus::Sessions);
         press(KeyCode::Char('f'), &mut app, &mut t);
-        press(KeyCode::Char('e'), &mut app, &mut t);
-        assert!(app.expanded);
+        assert!(app.history_view);
         assert_eq!(app.focus, Focus::History);
-        assert!(text(reader(&app, &t)).contains("END_OF_REPLY"));
-        assert!(!preview(&selected_entry(&app).unwrap().messages[2].text).contains("END_OF_REPLY"));
-        press(KeyCode::Up, &mut app, &mut t);
-        assert!(text(reader(&app, &t)).contains("Tool action only"));
-        assert!(text(reader(&app, &t)).contains("END_OF_REPLY"));
-        press(KeyCode::Up, &mut app, &mut t);
-        assert!(text(reader(&app, &t)).contains("User question only"));
-        let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 30)).unwrap();
-        term.draw(|f| draw(f, &mut app, &t)).unwrap();
-        let right_text = |term: &ratatui::Terminal<ratatui::backend::TestBackend>, area: Rect| {
-            (area.y..area.bottom())
-                .map(|y| {
-                    (area.x..area.right())
-                        .map(|x| term.backend().buffer()[(x, y)].symbol())
-                        .collect::<String>()
-                })
-                .collect::<Vec<_>>()
-                .join("\n")
-        };
-        let right = right_text(&term, app.details_area);
-        assert!(right.contains("User question only"));
-        assert!(!right.contains("TERMINAL"));
-        press(KeyCode::Char('f'), &mut app, &mut t);
+        assert_eq!(app.row_key(), selected);
+        let full = text(reader(&app, &t));
+        assert!(
+            full.contains("User question only")
+                && full.contains("Tool action only")
+                && full.contains("END_OF_REPLY")
+        );
+        press(KeyCode::Tab, &mut app, &mut t);
         assert_eq!(app.focus, Focus::Reader);
         press(KeyCode::Down, &mut app, &mut t);
         assert_eq!(app.detail_scroll, 1);
-        press(KeyCode::Esc, &mut app, &mut t);
-        assert!(!app.expanded);
+        press(KeyCode::BackTab, &mut app, &mut t);
         assert_eq!(app.focus, Focus::History);
-        assert!(text(details(&app, &t)).contains("TERMINAL"));
-        term.draw(|f| draw(f, &mut app, &t)).unwrap();
-        let right = right_text(&term, app.details_area);
-        assert!(right.contains("TERMINAL"));
-        assert!(!right.contains("User question only"));
-        assert_eq!(history_entries(&app).len(), 1);
+        press(KeyCode::Enter, &mut app, &mut t);
+        assert_eq!(app.focus, Focus::Reader);
+        press(KeyCode::Char('f'), &mut app, &mut t);
+        assert!(!app.history_view);
+        assert_eq!(app.focus, Focus::Sessions);
+        assert_eq!(app.row_key(), selected);
+        press(KeyCode::Char('f'), &mut app, &mut t);
+        press(KeyCode::Esc, &mut app, &mut t);
+        assert!(!app.history_view);
+        assert_eq!(app.focus, Focus::Sessions);
+        press(KeyCode::Down, &mut app, &mut t);
+        assert_eq!(app.selected().unwrap().id, "b");
     }
     #[test]
     fn iterations_group_requests_with_all_following_output_and_start_at_top() {
@@ -1550,14 +1544,14 @@ mod tests {
         assert_eq!(entries[2].messages.len(), 1);
         assert_eq!(app.history_state.selected(), Some(0));
         app.focus = Focus::History;
-        expand(&mut app, true);
+        switch_view(&mut app, true);
         app.move_history(1);
         let t = crate::theme::get("calm").unwrap();
         let full = text(reader(&app, &t));
         assert!(full.contains("Second request") && full.contains("Second answer"));
         assert!(!full.contains("User question only"));
         app.move_selection(1);
-        assert!(!app.expanded);
+        assert!(!app.history_view);
         app.set_content(Some(("b".into(), Ok(content))));
         assert_eq!(app.history_state.selected(), Some(0));
         let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 30)).unwrap();
@@ -1571,11 +1565,11 @@ mod tests {
         let mut app = content_app();
         app.history_state.select(Some(0));
         app.focus = Focus::History;
-        expand(&mut app, true);
+        switch_view(&mut app, true);
         let mut next = selected_content(&app).unwrap().as_ref().unwrap().clone();
         next.messages[2].text.push_str(" Growing answer");
         app.set_content(Some(("a".into(), Ok(next.clone()))));
-        assert!(app.expanded);
+        assert!(app.history_view);
         assert_eq!(app.history_state.selected(), Some(0));
         next.messages.insert(
             0,
@@ -1586,67 +1580,107 @@ mod tests {
         );
         app.set_content(Some(("a".into(), Ok(next.clone()))));
         assert_eq!(app.history_state.selected(), Some(1));
-        assert!(app.expanded);
+        assert!(app.history_view);
         app.focus = Focus::Reader;
         next.messages.remove(1);
         app.set_content(Some(("a".into(), Ok(next))));
-        assert!(!app.expanded);
+        assert!(app.history_view);
         assert_eq!(app.focus, Focus::History);
         app.reconcile(vec![]);
         assert!(selected_entry(&app).is_none());
     }
     #[test]
-    fn responsive_panels_preserve_focus_on_mouse_interactions() {
+    fn two_columns_resize_in_both_modes_and_mouse_preserves_focus() {
         let t = crate::theme::get("sunset").unwrap();
         let mut app = content_app();
         for (w, h) in [(150, 40), (100, 25), (80, 25), (50, 12), (150, 40)] {
-            let mut term =
-                ratatui::Terminal::new(ratatui::backend::TestBackend::new(w, h)).unwrap();
-            term.draw(|f| draw(f, &mut app, &t)).unwrap();
-            for a in [app.list_area, app.history_area, app.details_area] {
-                assert!(a.width > 2 && a.height >= 3, "{w}×{h}: {a:?}");
-                assert!(a.right() <= w && a.bottom() <= h - 2);
+            for history in [false, true] {
+                switch_view(&mut app, history);
+                let mut term =
+                    ratatui::Terminal::new(ratatui::backend::TestBackend::new(w, h)).unwrap();
+                term.draw(|f| draw(f, &mut app, &t)).unwrap();
+                let left = if history {
+                    app.history_area
+                } else {
+                    app.list_area
+                };
+                let hidden = if history {
+                    app.list_area
+                } else {
+                    app.history_area
+                };
+                assert_eq!(hidden, Rect::default());
+                for area in [left, app.details_area] {
+                    assert!(area.width > 2 && area.height >= 3, "{w}×{h}: {area:?}");
+                    assert!(area.right() <= w && area.bottom() <= h - 2);
+                }
+                assert_eq!(left.y, app.details_area.y);
+                assert_eq!(left.height, app.details_area.height);
+                assert_eq!(left.right(), app.details_area.x);
+                assert!(!left.intersects(app.details_area));
+                let rendered = (0..h)
+                    .map(|y| {
+                        (0..w)
+                            .map(|x| term.backend().buffer()[(x, y)].symbol())
+                            .collect::<String>()
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                if history {
+                    assert!(rendered.contains("Folder:"));
+                    assert!(rendered.contains("Content"));
+                    assert!(!rendered.contains("TERMINAL"));
+                } else {
+                    assert!(rendered.contains("Sessions"));
+                    assert!(rendered.contains("Details"));
+                    assert!(!rendered.contains("History"));
+                }
+                let before = app.row_key();
+                let focus = app.focus;
+                mouse(
+                    event::MouseEvent {
+                        kind: MouseEventKind::Down(event::MouseButton::Left),
+                        column: left.x + 2,
+                        row: left.y + 1,
+                        modifiers: KeyModifiers::NONE,
+                    },
+                    &mut app,
+                );
+                mouse(
+                    event::MouseEvent {
+                        kind: MouseEventKind::ScrollDown,
+                        column: app.details_area.x + 2,
+                        row: app.details_area.y + 2,
+                        modifiers: KeyModifiers::NONE,
+                    },
+                    &mut app,
+                );
+                assert_eq!(app.focus, focus);
+                assert_eq!(app.row_key(), before);
             }
-            assert!(!app.list_area.intersects(app.history_area));
-            assert!(!app.details_area.intersects(app.history_area));
-            assert!(!app.list_area.intersects(app.details_area));
-            if w >= 90 {
-                assert_eq!(app.list_area.x, app.history_area.x);
-                assert!(app.details_area.x > app.list_area.x);
-            }
-            let before = app.row_key();
-            mouse(
-                event::MouseEvent {
-                    kind: MouseEventKind::Down(event::MouseButton::Left),
-                    column: app.history_area.x + 10,
-                    row: app.history_area.y + 1,
-                    modifiers: KeyModifiers::NONE,
-                },
-                &mut app,
-            );
-            assert_eq!(app.focus, Focus::Sessions);
-            assert_eq!(app.row_key(), before);
-            term.draw(|f| draw(f, &mut app, &t)).unwrap();
-            assert_eq!(
-                term.backend().buffer()[(app.history_area.x, app.history_area.y)].symbol(),
-                "╭"
-            );
-            assert_eq!(
-                term.backend().buffer()[(app.list_area.x, app.list_area.y)].symbol(),
-                "╭"
-            );
-            mouse(
-                event::MouseEvent {
-                    kind: MouseEventKind::ScrollDown,
-                    column: app.details_area.x + 2,
-                    row: app.details_area.y + 2,
-                    modifiers: KeyModifiers::NONE,
-                },
-                &mut app,
-            );
-            assert_eq!(app.focus, Focus::Sessions);
-            assert_eq!(app.row_key(), before);
         }
+    }
+    #[test]
+    fn empty_history_and_search_keep_mode_and_selection_consistent() {
+        let mut app = content_app();
+        app.content = None;
+        switch_view(&mut app, true);
+        let t = crate::theme::get("calm").unwrap();
+        let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 25)).unwrap();
+        term.draw(|f| draw(f, &mut app, &t)).unwrap();
+        assert!(app.history_view);
+        assert_eq!(app.focus, Focus::History);
+        let worker = inert_worker();
+        let mut t = t;
+        key(
+            KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE),
+            &mut app,
+            &worker,
+            &mut t,
+        );
+        assert!(app.editing);
+        assert!(!app.history_view);
+        assert_eq!(app.focus, Focus::Sessions);
     }
     #[test]
     fn compact_paths_keep_parent_and_home_identity() {

@@ -36,12 +36,17 @@ by identity and independent details scroll. Unknown paths do not exclude agents.
 
 ## Details and content
 
-At widths of at least 90 terminal columns, Sessions and History share the left
-60% column and Details fills the right 40%. Sessions grows with its rows up to
-40% of the left column height, leaving History the remaining space. Below 90
-columns, Sessions, Details and History stack vertically; the usable minimum is
-50 columns by 12 rows. These choices implement the user's compact asymmetric
-layout; resize, focus and mouse fixtures protect pane boundaries.
+The TUI uses two full-height columns at every supported size: left 40%, right
+60%. The left column lists sessions or iterations; the wider right column holds
+metadata or full text. The usable minimum is 50 columns by 12 rows. This layout
+gives Sessions the available height rather than sharing it with History; resize,
+mode, focus and mouse fixtures protect pane boundaries.
+
+Startup is Sessions | Details. f switches both columns together to History |
+Content for the selected session, and switches back from either history pane.
+The selected session and iteration survive mode switches. History mode keeps a
+fixed header with session name, provider/activity and folder above both panels;
+o still performs the same identity-validated Jump. Search returns to Sessions.
 
 Details contains the visible session name and provider/activity, terminal window,
 tab and pane names, full working folder and differing Git root, and process/pane
@@ -59,22 +64,22 @@ Unicode characters, flattened to one paragraph, with an ellipsis for longer text
 Navigation selects iterations, not individual messages or lines. Selecting a
 session resets History to its topmost iteration and scroll position. The heading
 states oldest → newest: earlier iterations are above later ones.
-e / Enter in History opens the full retained iteration in the right column in
-place of Details, with separate You/Agent/Action headings. Focus stays in History;
-subsequent selections update the reader. Esc/e restores Details. f / Tab focuses
-the right Content reader for line scrolling. Details itself is excluded from
-keyboard focus; its metadata remains scrollable with the mouse wheel.
+Content automatically displays the full retained selected iteration, with
+separate You/Agent/Action headings; subsequent selections update the reader.
+Tab / Shift+Tab switches History ↔ Content for keyboard scrolling; e / Enter
+in History also focuses Content, and e returns to History. f or Esc returns to
+Sessions | Details. Details itself is excluded from keyboard focus; its metadata
+remains scrollable with the mouse wheel.
 Refresh preserves the selected iteration when its messages persist, grow or gain
-following output; if it disappears, the reader closes rather than showing another
-iteration. No guessed message timestamps or additional scans are introduced.
+following output. If it disappears, the selection is reconciled and Content is
+reset to the new selected iteration, keeping the current mode. Losing the selected
+session returns to Sessions. No guessed timestamps or additional scans are added.
 
-Startup focus is Sessions. f / Tab cycles Sessions ↔ History, adding the right
-Content reader only while open;
-Shift+Tab cycles backward. The active pane has a muted accent border and a footer
-focus label, with no filled/bold title. Mouse clicks do not change focus; wheel
-operates the pane under the pointer. Arrows/page keys operate on keyboard focus.
-History has a selected-iteration marker; the right pane has an independent scrollbar.
-Help/Quit remain visible. t cycles palettes and saves the choice immediately.
+The active pane has a muted accent border and a footer focus label, with no
+filled/bold title. Mouse clicks do not change focus; wheel operates the visible
+pane under the pointer. Arrows/page keys operate on keyboard focus. History has
+a selected-iteration marker; Content has an independent scrollbar. Help/Quit
+remain visible. t cycles palettes and saves the choice immediately.
 The default calm palette uses terminal-default text, neutral separators and a
 muted blue focus accent. Existing gtd palettes remain available as options.
 

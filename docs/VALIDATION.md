@@ -223,3 +223,23 @@ with q and sova to load the installed UI.
 History remains a visible terminal snapshot; the filters do not create a full
 provider archive. Session names shown in Details remain terminal-derived; native
 chat renaming stays with the agent CLI and terminal tab renaming stays with iTerm2.
+
+
+## Paired two-column views — 2026-10-13
+
+Installed the current development build locally; package version remains 0.2.2
+and the two-column change is Unreleased. Sessions | Details and History | Content
+use full-height 40% / 60% columns. f switches both panels while preserving the
+selected session and iteration; the history header retains name, provider/status
+and folder. Tab switches History/Content focus; o retains the existing Jump path.
+
+make check passed 33 Rust tests plus format, clippy, release build and delivery
+checks. Fixtures exercise both modes at 150×40, 100×25, 80×25 and 50×12, mode
+switches, content scrolling, empty history, search, mouse focus and refresh.
+The installed binary was run in a task-owned controlling PTY: Sessions/Details
+rendered, f displayed History/Content with fixed metadata, Tab enabled Content
+scrolling, PageDown was exercised and f returned to Sessions/Details. q exited
+with code 0 and restored the alternate screen. No Jump was induced in this
+check; identity/linking protections retain their existing tests. No user agent
+received input. Installed bytes match the local release build; configuration
+was preserved by the installer.

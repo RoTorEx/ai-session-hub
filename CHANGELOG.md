@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Use full-height Sessions | Details and History | Content views; f switches both columns while retaining session selection, metadata and Jump.
+- Show iteration content automatically; Tab switches history/content focus for scrolling.
+
 ## [0.2.2] - 2026-10-12
 
 - Group each request with its answers and actions in one History iteration, selecting the top iteration on session changes.
