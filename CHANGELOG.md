@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-10-13
+
 - Use full-height Sessions | Details and History | Content views; f switches both columns while retaining session selection, metadata and Jump.
 - Show iteration content automatically; Tab switches history/content focus for scrolling.
 
