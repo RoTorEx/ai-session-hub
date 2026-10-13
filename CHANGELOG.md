@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-10-13
+
 - Read full selected content only in History; refresh compact statuses every 10 seconds on a separate timer.
 - Pause background scans on terminal FocusOut and refresh immediately on FocusIn, retaining mode and selection.
 - Release both iTerm2 helpers after 60 seconds without user activity; input or focus return warms them and refreshes data.
