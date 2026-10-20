@@ -8,6 +8,7 @@ use crate::{
 };
 use anyhow::Result;
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::time::SystemTime;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum State {
@@ -29,6 +30,10 @@ pub struct Observation {
     pub state: State,
     pub answer: Option<u64>,
     pub attention: Attention,
+    pub request: Option<String>,
+    pub model: Option<String>,
+    pub reasoning: Option<String>,
+    pub last_message: Option<String>,
 }
 impl Observation {
     pub fn parse(text: &str, provider: process::Provider) -> Self {
@@ -59,8 +64,25 @@ impl Observation {
             state,
             answer,
             attention,
+            request: c
+                .messages
+                .iter()
+                .rev()
+                .find(|m| m.role == Role::You)
+                .map(|m| m.text.clone()),
+            model: metadata(text, "model"),
+            reasoning: metadata(text, "reasoning").or_else(|| metadata(text, "effort")),
+            last_message: message.map(|m| m.text.clone()),
         }
     }
+}
+fn metadata(text: &str, label: &str) -> Option<String> {
+    text.lines().find_map(|line| {
+        let line = line.trim().trim_matches(['│', ' ']);
+        let (key, value) = line.split_once(':')?;
+        (key.trim().eq_ignore_ascii_case(label) && !value.trim().is_empty())
+            .then(|| value.trim().to_owned())
+    })
 }
 fn attention(text: &str) -> Attention {
     let text = text.to_lowercase();
@@ -120,6 +142,15 @@ pub struct Progress {
     ready: bool,
     opened: bool,
     attention: Attention,
+    pub updated_at: Option<SystemTime>,
+    pub requested_at: Option<SystemTime>,
+    pub request: Option<String>,
+    pub model: Option<String>,
+    pub reasoning: Option<String>,
+    observed: bool,
+    last_state: Option<State>,
+    pub last_message: Option<String>,
+    pub native_metadata: bool,
 }
 impl Progress {
     pub fn symbol(&self) -> &'static str {
@@ -135,6 +166,40 @@ impl Progress {
         }
     }
     pub fn observe(&mut self, observation: Option<&Observation>, focused: bool) {
+        let now = SystemTime::now();
+        if let Some(o) = observation {
+            if !self.native_metadata
+                && self.observed
+                && (self
+                    .last_state
+                    .is_some_and(|s| s != o.state && o.state != State::Unknown)
+                    || (o.answer.is_some() && self.last_answer != o.answer)
+                    || o.request
+                        .as_ref()
+                        .is_some_and(|r| self.request.as_ref() != Some(r)))
+            {
+                self.updated_at = Some(now);
+            }
+            if let Some(request) = &o.request
+                && !self.native_metadata
+            {
+                if self.observed && self.request.as_ref().is_some_and(|r| r != request) {
+                    self.requested_at = Some(now);
+                }
+                self.request = Some(request.clone());
+            }
+            if o.model.is_some() {
+                self.model.clone_from(&o.model);
+            }
+            if o.reasoning.is_some() {
+                self.reasoning.clone_from(&o.reasoning);
+            }
+            if !self.native_metadata {
+                self.last_message.clone_from(&o.last_message);
+            }
+            self.last_state = Some(o.state);
+            self.observed = true;
+        }
         self.state = observation.map_or(State::Unknown, |o| o.state);
         self.attention = observation.map_or(Attention::None, |o| o.attention);
         if let Some(o) = observation {
@@ -199,6 +264,7 @@ impl Progress {
 pub struct Snapshot {
     pub sessions: Vec<(String, Option<Observation>)>,
     pub focused: Option<String>,
+    pub metadata: std::collections::HashMap<String, crate::session_data::Metadata>,
 }
 pub fn read(sessions: &[Session], terminal: &mut iterm::Client) -> Result<Snapshot> {
     let table = process::scan()?;
@@ -212,6 +278,17 @@ pub fn read(sessions: &[Session], terminal: &mut iterm::Client) -> Result<Snapsh
         .collect();
     let panes: Vec<_> = valid.iter().filter_map(|s| s.location.clone()).collect();
     let observed = terminal.observe(&panes)?;
+    let mut metadata = crate::session_data::read(&valid);
+    // Reject identity reuse during the file read.
+    let after = process::scan()?;
+    metadata.retain(|id, _| {
+        valid.iter().any(|s| {
+            &s.id == id
+                && after
+                    .iter()
+                    .any(|p| p.pid == s.pid && p.started == s.started)
+        })
+    });
     let sessions = sessions
         .iter()
         .map(|s| {
@@ -229,17 +306,45 @@ pub fn read(sessions: &[Session], terminal: &mut iterm::Client) -> Result<Snapsh
     Ok(Snapshot {
         sessions,
         focused: observed.focused,
+        metadata,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn timing_records_changes_without_treating_initial_or_failed_samples_as_events() {
+        let mut p = Progress::default();
+        let idle = o(State::Idle, Some(1));
+        p.observe(Some(&idle), false);
+        assert!(p.updated_at.is_none());
+        p.observe(None, false);
+        p.observe(Some(&idle), false);
+        assert!(p.updated_at.is_none());
+        p.observe(Some(&o(State::Working, Some(1))), false);
+        let changed = p.updated_at;
+        assert!(changed.is_some());
+        p.observe(None, false);
+        p.observe(Some(&o(State::Working, Some(1))), false);
+        assert_eq!(p.updated_at, changed);
+        let mut request = o(State::Working, Some(1));
+        request.request = Some("First visible request".into());
+        p.observe(Some(&request), false);
+        assert!(p.requested_at.is_none());
+        request.request = Some("A different submitted request".into());
+        p.observe(Some(&request), false);
+        assert!(p.requested_at.is_some());
+    }
     fn o(state: State, answer: Option<u64>) -> Observation {
         Observation {
             state,
             answer,
             attention: Attention::None,
+            request: None,
+            model: None,
+            reasoning: None,
+            last_message: None,
         }
     }
     #[test]
@@ -341,6 +446,10 @@ mod tests {
             state: State::Idle,
             answer: Some(1),
             attention: Attention::Question,
+            request: None,
+            model: None,
+            reasoning: None,
+            last_message: None,
         };
         p.observe(Some(&question), false);
         assert_eq!(p.symbol(), "?");

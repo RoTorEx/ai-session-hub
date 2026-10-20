@@ -30,15 +30,20 @@ paths and terminal contents never authorize Jump. Ambiguity blocks linking.
 
 Groups use Git worktree roots, otherwise actual working directories. Headings
 are visual separators: keyboard and mouse select only sessions. Groups stay
-expanded. The session list is the entry point; PID, counts, arrows and duplicate
-project/provider suffixes do not clutter each entry. Refresh preserves selection
+expanded. The session list is the entry point. Project headings separate task rows; each
+row shows its title, status, last conversation update and last submitted request.
+Narrow windows retain the title/status and expose full timing in Details. PID,
+branch arrows and duplicate project/provider suffixes do not clutter each entry.
+Tab/Shift+Tab cycles All, Needs you, Working, Ready and Unknown with counts.
+Ready includes idle/opened sessions; Needs you includes approval/questions/blockers.
+Unknown is not labelled inactive because absent markers do not prove inactivity. Refresh preserves selection
 by identity and independent details scroll. Unknown paths do not exclude agents.
 
 ## Details and content
 
-The TUI uses two full-height columns at every supported size: left 40%, right
-60%. The left column lists sessions or iterations; the wider right column holds
-metadata or full text. The usable minimum is 50 columns by 12 rows. This layout
+The TUI uses two full-height columns at every supported size. Sessions uses
+65% for the task table and 35% for details, following the Codex session-manager
+structure. History retains 40% for iterations and 60% for full text. The usable minimum is 50 columns by 12 rows. This layout
 gives Sessions the available height rather than sharing it with History; resize,
 mode, focus and mouse fixtures protect pane boundaries.
 
@@ -48,11 +53,11 @@ The selected session and iteration survive mode switches. History mode keeps a
 fixed header with session name, provider/activity and folder above both panels;
 o still performs the same identity-validated Jump. Search returns to Sessions.
 
-Details contains the visible session name and provider/activity, terminal window,
-tab and pane names, full working folder and differing Git root, and process/pane
-identity. Horizontal ruled headings separate sections. The name comes from the
-observed terminal title. Metadata is always available by scrolling. Latest
-exchange is shown only in History, avoiding duplicated content.
+Details starts with the visible session name, provider/status, model, reasoning,
+last-update/request times, project, last submitted request and latest answer when
+known. The History shortcut remains prominent. Terminal window/tab/pane and
+process identity follow below and remain scrollable. Horizontal ruled headings
+separate sections. Names still come from the observed terminal title.
 Groups display the directory basename, or ~ for home. Duplicate basenames include
 the parent directory for distinction; full paths stay in Details and search.
 
@@ -73,7 +78,7 @@ remains scrollable with the mouse wheel.
 Refresh preserves the selected iteration when its messages persist, grow or gain
 following output. If it disappears, the selection is reconciled and Content is
 reset to the new selected iteration, keeping the current mode. Losing the selected
-session returns to Sessions. No guessed timestamps or additional scans are added.
+session returns to Sessions. History timestamps are not guessed; the dashboard metadata source is described below.
 
 The active pane has a muted accent border and a footer focus label, with no
 filled/bold title. Mouse clicks do not change focus; wheel operates the visible
@@ -98,6 +103,37 @@ No conversation ID is invented. Capture output retains the last 65,536 character
 up to 32 blocks, each at most 8,192 characters. The scripting bridge supplies
 visible rows, not the complete scrollback. Nothing is persisted or uploaded.
 
+## Dashboard metadata and timing
+
+The requested dashboard adds local provider metadata to compact status sampling.
+It never chooses a conversation by cwd, title or recency. Codex requires exactly
+one JSONL file under its sessions root held open by the live process, with a
+session_meta header. Claude requires its PID registry to match PID, process start
+(second precision), interactive kind and darwin domain, then exactly one transcript
+with that session ID. Native process identity is checked again after reads.
+Unlinked sessions never receive provider-file reads. CODEX_HOME and
+CLAUDE_CONFIG_DIR override the default ~/.codex and ~/.claude roots.
+
+Read at most the last 1 MiB per file on the existing activity timer, dropping a
+partial leading line and ignoring malformed/incomplete JSON. The limit bounds
+work independently of archive size; missing older fields remain unknown. Keep
+only model, reasoning, latest submitted request, latest answer and their provider
+timestamps in memory. Tool results, sidechains and meta messages are not requests.
+History remains the selected pane's visible-screen iteration browser; this is not
+archive-wide history search. No new files are persisted or uploaded.
+
+Updated is the latest retained user/agent text event, not a polling/mtime timer.
+Last request is the submitted user event. Below one hour, show seconds (below one
+minute) or whole minutes; at one hour and above, show calendar date and clock time
+in Europe/Warsaw with date-specific CET/CEST. The one-hour threshold follows the
+user's request to replace long-running elapsed timers with a useful clock time.
+Initial terminal observations have unknown times. Later observed changes may be
+shown with ~ to distinguish sampling time from provider timestamps; details labels
+the source. Unavailable model/reasoning/times show an em dash, never global config
+defaults. Timer redraws run once per second only while focused/awake and a recent
+time is visible; they do not keep helpers awake. Tests cover threshold, DST/day
+rollover, tool-result exclusion, filter reconciliation, resize and history retention.
+
 ## Activity and opening responses
 
 The session list uses one fixed symbol column: ● Working, ○ Idle, ! Approval,
@@ -110,8 +146,8 @@ While Sova has terminal focus, all linked agents receive a read-only status pass
 on the separate activity timer (10 seconds by default). Native
 PID/start/TTY/ancestry is checked once per batch; the terminal bridge confirms
 UUID-selected pane TTY/root and returns only its last 24 visible rows, at most
-8,192 characters. Only parsed state and an in-memory normalized response hash
-are retained for unselected sessions. No archived/full conversation is read.
+8,192 characters. Parsed status and an in-memory normalized response hash are retained for
+unselected sessions, alongside the bounded metadata described below.
 
 Ready requires an observed Working → Idle transition and a different visible
 agent response from the preceding baseline; tool output alone is insufficient.
@@ -207,6 +243,7 @@ tmux, additional providers or terminals. No agent control or terminal writes.
 ## Code map
 
 process/iterm own identity/linking and the read-only terminal bridge; model owns
-cached inventory/grouping; content owns observed terminal state/text; tui owns
+cached inventory/grouping; content owns observed terminal state/text; session_data owns bounded process-bound
+provider metadata; tui owns
 navigation/presentation and timers. CLI/TUI share Jump. benchmark owns explicit
 local diagnostics. Delivery belongs to installer/updater/release scripts.

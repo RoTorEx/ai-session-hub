@@ -264,3 +264,31 @@ the task-owned PTY; real window hiding was not induced. No user agent received
 input and no Jump was induced in these runs. CPU/RSS comparisons and timing
 limits are recorded in PERFORMANCE.md. Task-owned configs/processes were cleaned
 up; installed development binary and user config remain.
+
+
+## Session dashboard — 2026-10-20
+
+Installed the Unreleased dashboard locally; package version remains 0.2.4.
+Sessions uses a grouped task/status/update/request table and 65% / 35% columns;
+History retains 40% / 60%, iteration selection and the full-text reader.
+
+make check passes 43 tests, format/clippy, release build and delivery fixtures.
+New checks cover the one-hour boundary, Warsaw DST/date rollover, real request
+versus tool-result parsing, stale PID and duplicate transcript rejection, status
+filter reconciliation, observed-time recovery after failed samples, and dashboard
+metadata with retained history. TestBackend fixtures cover both modes at sizes
+from 50×12 to 160×36; the wide dashboard was inspected through its rendered cells.
+
+The installed binary detected twelve live sessions linked to iTerm2. A separate
+controlling PTY verified real Claude model/reasoning and the last-request date,
+History/Content transitions, keyboard scrolling, filter cycling, help, resize to
+50×12 and q exit with code 0. No agent received input and no Jump was induced.
+A fresh shell resolved ~/.x-cli-sova/bin/sova. Installed bytes were compared with
+the checked release build. Existing user agents and terminal names were preserved.
+
+Current Codex clients use a shared app-server and hold no per-thread rollout file.
+Their exact provider metadata cannot be bound through the implemented file
+contract; these fields remain unknown unless observed directly in terminal text.
+The open-rollout parser is fixture-tested, not validated against a live older
+Codex writer in this run. The history browser remains a visible-screen snapshot.
+No release tag or published package was created.

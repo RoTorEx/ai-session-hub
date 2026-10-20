@@ -9,6 +9,7 @@ mod content;
 mod iterm;
 mod model;
 mod process;
+mod session_data;
 mod theme;
 mod tui;
 mod update;

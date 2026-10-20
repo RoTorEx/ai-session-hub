@@ -19,8 +19,8 @@ use ratatui::{
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{
-        Block, BorderType, Borders, List, ListItem, ListState, Paragraph, Scrollbar,
-        ScrollbarOrientation, ScrollbarState, Wrap,
+        Block, Borders, List, ListItem, ListState, Paragraph, Scrollbar, ScrollbarOrientation,
+        ScrollbarState, Wrap,
     },
 };
 use std::{
@@ -31,10 +31,47 @@ use std::{
         mpsc,
     },
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
 const HELPER_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum StatusFilter {
+    #[default]
+    All,
+    NeedsYou,
+    Working,
+    Ready,
+    Unknown,
+}
+impl StatusFilter {
+    const ALL: [Self; 5] = [
+        Self::All,
+        Self::NeedsYou,
+        Self::Working,
+        Self::Ready,
+        Self::Unknown,
+    ];
+    fn label(self) -> &'static str {
+        match self {
+            Self::All => "All",
+            Self::NeedsYou => "Needs you",
+            Self::Working => "Working",
+            Self::Ready => "Ready",
+            Self::Unknown => "Unknown",
+        }
+    }
+    fn includes(self, p: &Progress) -> bool {
+        match self {
+            Self::All => true,
+            Self::NeedsYou => matches!(p.label(), "Approval" | "Question" | "Blocked"),
+            Self::Working => p.label() == "Working",
+            Self::Ready => matches!(p.label(), "Idle" | "Ready" | "Opened"),
+            Self::Unknown => p.label() == "?",
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum Focus {
@@ -78,6 +115,7 @@ pub struct App {
     rows: Vec<Row>,
     state: ListState,
     filter: String,
+    status_filter: StatusFilter,
     editing: bool,
     focus: Focus,
     history_state: ListState,
@@ -114,6 +152,7 @@ impl App {
             rows: vec![],
             state: ListState::default(),
             filter: String::new(),
+            status_filter: StatusFilter::All,
             editing: false,
             focus: Focus::Sessions,
             history_state: ListState::default(),
@@ -238,6 +277,12 @@ impl App {
         let needle = self.filter.to_lowercase();
         let mut groups: BTreeMap<String, Vec<usize>> = BTreeMap::new();
         for (i, s) in self.sessions.iter().enumerate() {
+            if !self
+                .status_filter
+                .includes(&self.activity.get(&s.id).cloned().unwrap_or_default())
+            {
+                continue;
+            }
             let name = s
                 .location
                 .as_ref()
@@ -317,7 +362,25 @@ impl App {
                     .observe(observed.as_ref(), focused);
             }
         }
+        for (id, metadata) in snapshot.metadata {
+            if let Some(p) = self.activity.get_mut(&id) {
+                p.native_metadata = true;
+                p.model = metadata.model.or(p.model.take());
+                p.reasoning = metadata.reasoning.or(p.reasoning.take());
+                p.updated_at = metadata.updated_at;
+                p.requested_at = metadata.requested_at;
+                p.request = metadata.request.or(p.request.take());
+                p.last_message = metadata.last_message;
+            }
+        }
         self.dirty |= self.activity != before;
+        if self.activity != before && self.status_filter != StatusFilter::All {
+            let key = self.row_key();
+            self.rebuild(key.clone());
+            if self.row_key() != key {
+                self.selection_changed();
+            }
+        }
     }
     fn move_selection(&mut self, delta: isize) {
         let selectable: Vec<_> = self
@@ -546,6 +609,7 @@ pub fn run(config: Config, mut theme: Theme) -> Result<()> {
         let _guard = TerminalGuard;
         execute!(std::io::stdout(), EnableMouseCapture, EnableFocusChange)?;
         let mut app = App::new();
+        let mut last_clock_draw = Instant::now();
         while !terminate.load(Ordering::Relaxed) {
             while let Ok(response) = worker.rx.try_recv() {
                 match response {
@@ -580,11 +644,15 @@ pub fn run(config: Config, mut theme: Theme) -> Result<()> {
                         match result {
                             Ok(snapshot) => app.observe(snapshot),
                             Err(_) => {
-                                let before = app.activity.clone();
-                                for progress in app.activity.values_mut() {
-                                    progress.observe(None, false);
-                                }
-                                app.dirty |= app.activity != before;
+                                app.observe(Snapshot {
+                                    sessions: app
+                                        .sessions
+                                        .iter()
+                                        .map(|s| (s.id.clone(), None))
+                                        .collect(),
+                                    focused: None,
+                                    metadata: Default::default(),
+                                });
                             }
                         }
                     }
@@ -604,7 +672,23 @@ pub fn run(config: Config, mut theme: Theme) -> Result<()> {
                 }
             }
             poll_background(&mut app, &worker, &config);
+            if app.active
+                && !app.sleeping
+                && last_clock_draw.elapsed() >= Duration::from_secs(1)
+                && app.activity.values().any(|p| {
+                    [p.updated_at, p.requested_at]
+                        .into_iter()
+                        .flatten()
+                        .any(|time| {
+                            time.elapsed()
+                                .is_ok_and(|age| age < Duration::from_secs(3600))
+                        })
+                })
+            {
+                app.dirty = true;
+            }
             if app.dirty {
+                last_clock_draw = Instant::now();
                 terminal.draw(|f| draw(f, &mut app, &theme))?;
                 app.dirty = false;
             }
@@ -782,6 +866,19 @@ fn key(k: KeyEvent, app: &mut App, worker: &Worker, theme: &mut Theme) -> bool {
         }
         KeyCode::Char('?') => app.help = true,
         KeyCode::Char('f' | 'F' | 'а' | 'А') => switch_view(app, !app.history_view),
+        KeyCode::Tab | KeyCode::BackTab if !app.history_view => {
+            let index = StatusFilter::ALL
+                .iter()
+                .position(|v| *v == app.status_filter)
+                .unwrap_or(0);
+            let offset = if k.code == KeyCode::BackTab { 4 } else { 1 };
+            app.status_filter = StatusFilter::ALL[(index + offset) % 5];
+            let old = app.row_key();
+            app.rebuild(old.clone());
+            if app.row_key() != old {
+                app.selection_changed();
+            }
+        }
         KeyCode::Tab | KeyCode::BackTab => toggle_reader(app),
         KeyCode::Right if app.focus != Focus::Reader => navigate(app, 1),
         KeyCode::Left if app.focus != Focus::Reader => navigate(app, -1),
@@ -877,11 +974,76 @@ fn details(app: &App, t: &Theme) -> Vec<Line<'static>> {
         return vec![Line::raw("Select a session to see its details")];
     };
     let width = app.details_area.width.saturating_sub(2);
+    let progress = app.activity.get(&s.id).cloned().unwrap_or_default();
     let mut lines = vec![
-        separator("SESSION", width, t),
-        field("Name", session_title(s), t),
-        field("Agent", s.provider.to_string(), t),
+        Line::styled(
+            session_title(s),
+            Style::default().fg(t.project).add_modifier(Modifier::BOLD),
+        ),
+        Line::raw(format!(
+            "{} {} · {}",
+            progress.symbol(),
+            progress.label(),
+            s.provider
+        )),
+        Line::default(),
+        field(
+            "Model",
+            progress.model.clone().unwrap_or_else(|| "—".into()),
+            t,
+        ),
+        field(
+            "Reasoning",
+            progress.reasoning.clone().unwrap_or_else(|| "—".into()),
+            t,
+        ),
+        field(
+            "Updated",
+            progress_time(&progress, false, SystemTime::now()),
+            t,
+        ),
+        field(
+            "Last request",
+            progress_time(&progress, true, SystemTime::now()),
+            t,
+        ),
+        Line::default(),
+        separator("PROJECT", width, t),
+        Line::raw(safe_text(s.cwd.as_deref().unwrap_or(&s.project))),
+        Line::default(),
+        separator("LAST REQUEST", width, t),
     ];
+    lines.insert(
+        7,
+        Line::styled(
+            if progress.native_metadata {
+                "Times: Europe/Warsaw · provider events"
+            } else {
+                "Times: Europe/Warsaw · observed changes (~)"
+            },
+            Style::default().fg(t.label),
+        ),
+    );
+    body(
+        &mut lines,
+        progress
+            .request
+            .as_deref()
+            .unwrap_or("Not visible in the terminal snapshot"),
+        t,
+    );
+    lines.push(Line::default());
+    lines.push(Line::styled(
+        "f History · requests, answers and actions",
+        Style::default().fg(t.info),
+    ));
+    if let Some(message) = &progress.last_message {
+        lines.push(Line::default());
+        lines.push(separator("LAST MESSAGE", width, t));
+        body(&mut lines, message, t);
+    }
+    lines.push(Line::default());
+    lines.push(separator("ACTIVITY", width, t));
     if let Some(progress) = app.activity.get(&s.id) {
         lines.push(field("Activity", progress.explanation().into(), t));
         lines.push(field("Response", progress.opening().into(), t));
@@ -920,6 +1082,70 @@ fn details(app: &App, t: &Theme) -> Vec<Line<'static>> {
         lines.push(field("Pane UUID", p.id.clone(), t));
     }
     lines
+}
+
+fn progress_time(progress: &Progress, request: bool, now: SystemTime) -> String {
+    let time = if request {
+        progress.requested_at
+    } else {
+        progress.updated_at
+    };
+    let value = event_time(time, now);
+    if time.is_some() && !progress.native_metadata {
+        format!("~{value}")
+    } else {
+        value
+    }
+}
+
+fn event_time(value: Option<SystemTime>, now: SystemTime) -> String {
+    let Some(value) = value else {
+        return "—".into();
+    };
+    let age = now.duration_since(value).unwrap_or_default().as_secs();
+    if age < 60 {
+        return format!("{age}s ago");
+    }
+    if age < 3600 {
+        return format!("{}m ago", age / 60);
+    }
+    let date: chrono::DateTime<chrono::Utc> = value.into();
+    date.with_timezone(&chrono_tz::Europe::Warsaw)
+        .format("%d %b %H:%M %Z")
+        .to_string()
+}
+
+fn fit_cell(text: &str, width: usize) -> String {
+    let mut result = String::new();
+    let mut cells = 0;
+    let clean = safe_text(text);
+    let truncated = Span::raw(&clean).width() > width;
+    let limit = width.saturating_sub(usize::from(truncated));
+    for c in clean.chars() {
+        let w = Span::raw(c.to_string()).width();
+        if cells + w > limit {
+            break;
+        }
+        result.push(c);
+        cells += w;
+    }
+    if truncated && width > 0 {
+        result.push('…');
+        cells += 1;
+    }
+    result.push_str(&" ".repeat(width.saturating_sub(cells)));
+    result
+}
+
+// Retain a useful title on narrow terminals, then add timing columns as space permits.
+fn session_columns(width: u16) -> (usize, usize, usize) {
+    match width {
+        95.. => (11, 20, 20),
+        72.. => (11, 18, 18),
+        52.. => (10, 0, 0),
+        36.. => (9, 0, 0),
+        _ => (0, 0, 0),
+    }
 }
 fn compact_path_with_home(path: &str, home: Option<&str>) -> String {
     if home == Some(path) {
@@ -1059,8 +1285,11 @@ fn session_title(s: &Session) -> String {
 fn pane_block(title: &str, focus: Focus, app: &App, t: &Theme) -> Block<'static> {
     Block::default()
         .title(format!(" {title} "))
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
+        .borders(if focus == Focus::Reader {
+            Borders::LEFT
+        } else {
+            Borders::TOP
+        })
         .border_style(Style::default().fg(if app.focus == focus {
             if focus == Focus::Reader {
                 t.detail_border
@@ -1116,7 +1345,7 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
         return;
     }
     let outer = Layout::vertical([
-        Constraint::Length(if app.history_view { 3 } else { 1 }),
+        Constraint::Length(3),
         Constraint::Min(1),
         Constraint::Length(2),
     ])
@@ -1146,7 +1375,34 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
             Style::default().fg(t.status),
         ),
     ])];
-    if app.history_view {
+    if !app.history_view {
+        heading.push(Line::from(
+            StatusFilter::ALL
+                .iter()
+                .map(|filter| {
+                    let count = app
+                        .sessions
+                        .iter()
+                        .filter(|s| {
+                            filter.includes(&app.activity.get(&s.id).cloned().unwrap_or_default())
+                        })
+                        .count();
+                    Span::styled(
+                        format!(" {} {count} ", filter.label()),
+                        if *filter == app.status_filter {
+                            Style::default().fg(t.selected_fg).bg(t.selected_bg)
+                        } else {
+                            Style::default().fg(t.status)
+                        },
+                    )
+                })
+                .collect::<Vec<_>>(),
+        ));
+        heading.push(Line::styled(
+            "Tab / Shift+Tab filter",
+            Style::default().fg(t.label),
+        ));
+    } else {
         if let Some(session) = app.selected() {
             let progress = app.activity.get(&session.id).cloned().unwrap_or_default();
             heading.push(Line::raw(format!(
@@ -1168,8 +1424,12 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
         Paragraph::new(heading).style(Style::default().fg(t.task)),
         outer[0],
     );
-    let columns = Layout::horizontal([Constraint::Percentage(40), Constraint::Percentage(60)])
-        .split(outer[1]);
+    let left = if app.history_view { 40 } else { 65 };
+    let columns = Layout::horizontal([
+        Constraint::Percentage(left),
+        Constraint::Percentage(100 - left),
+    ])
+    .split(outer[1]);
     app.details_area = columns[1];
     app.list_area = if app.history_view {
         Rect::default()
@@ -1183,6 +1443,10 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
     };
     if !app.history_view {
         let selected = app.state.selected();
+        let row_width = app.list_area.width.saturating_sub(3);
+        let (status_w, update_w, request_w) = session_columns(row_width);
+        let name_w = (row_width as usize).saturating_sub(status_w + update_w + request_w);
+        let now = SystemTime::now();
         let items: Vec<_> = app
             .rows
             .iter()
@@ -1202,32 +1466,48 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
                         "Ready" => t.project,
                         _ => t.status,
                     };
+                    let name = format!("{} {}", progress.symbol(), session_title(s));
+                    let normal = Style::default().fg(if active { t.selected_fg } else { t.task });
                     ListItem::new(Line::from(vec![
+                        Span::styled(fit_cell(&name, name_w), normal),
                         Span::styled(
-                            format!(
-                                "  {} {} ",
-                                if matches!(app.rows.get(row_index + 1), Some(Row::Session(_))) {
-                                    "├"
-                                } else {
-                                    "└"
-                                },
-                                progress.symbol()
-                            ),
+                            fit_cell(progress.label(), status_w),
                             Style::default().fg(if active { t.selected_fg } else { color }),
                         ),
                         Span::styled(
-                            format!("{:<7} ", s.provider.to_string()),
-                            Style::default().fg(if active { t.selected_fg } else { t.status }),
+                            fit_cell(&progress_time(&progress, false, now), update_w),
+                            normal,
                         ),
                         Span::styled(
-                            session_title(s),
-                            Style::default().fg(if active { t.selected_fg } else { t.task }),
+                            fit_cell(&progress_time(&progress, true, now), request_w),
+                            normal,
                         ),
                     ]))
                 }
             })
             .collect();
         let block = pane_block("Sessions", Focus::Sessions, app, t);
+        let table_area = Rect {
+            y: app.list_area.y + 2,
+            height: app.list_area.height.saturating_sub(2),
+            ..app.list_area
+        };
+        let header = format!(
+            "  {}{}{}{}",
+            fit_cell("Tasks", name_w),
+            fit_cell("Status", status_w),
+            fit_cell("Updated", update_w),
+            fit_cell("Request", request_w)
+        );
+        f.render_widget(block.clone(), app.list_area);
+        f.render_widget(
+            Paragraph::new(header).style(Style::default().fg(t.label)),
+            Rect {
+                y: app.list_area.y + 1,
+                height: 1,
+                ..app.list_area
+            },
+        );
         if items.is_empty() {
             f.render_widget(
                 Paragraph::new(if app.last_scan.is_none() {
@@ -1236,18 +1516,16 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
                     "No live sessions"
                 } else {
                     "No matching sessions"
-                })
-                .block(block),
-                app.list_area,
+                }),
+                table_area,
             );
         } else {
             f.render_stateful_widget(
                 List::new(items)
-                    .block(block)
                     .highlight_style(Style::default().bg(t.selected_bg).fg(t.selected_fg))
                     .highlight_symbol("› ")
                     .scroll_padding(1),
-                app.list_area,
+                table_area,
                 &mut app.state,
             );
         }
@@ -1256,7 +1534,7 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
         if app.history_view {
             "Content · Tab scroll"
         } else {
-            "Details"
+            "Task Details"
         },
         Focus::Reader,
         app,
@@ -1272,7 +1550,7 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
         draw_history(f, app, t);
     }
     let context = match app.focus {
-        Focus::Sessions => "↑↓ select · Enter open · f history",
+        Focus::Sessions => "↑↓ select · Enter open · f history · Tab filter",
         Focus::History => "↑↓ iteration · Tab scroll · o open",
         Focus::Reader => "↑↓ scroll · Tab history · o open",
     };
@@ -1317,7 +1595,7 @@ Startup: Sessions. Both panels change together; selected session is retained.
 Polling pauses without terminal focus; returning refreshes immediately.
 After 60 seconds without input, helpers exit; input/focus return wakes them.
 History header keeps session name, provider/status and folder visible.
-Tab / Shift+Tab: switch History ↔ Content for scrolling
+Tab / Shift+Tab: status filter in Sessions; History ↔ Content in history
 ↑/↓ or j/k: select a session/iteration or scroll Content
 ←/→: previous/next session or history iteration
 e / Enter in History: focus Content; e returns to History
@@ -1352,6 +1630,119 @@ Esc/?: close help",
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn timestamps_switch_at_one_hour_and_follow_warsaw_dst() {
+        let time =
+            |v: &str| -> SystemTime { chrono::DateTime::parse_from_rfc3339(v).unwrap().into() };
+        let summer = time("2026-10-20T09:00:00Z");
+        assert_eq!(
+            event_time(Some(summer), summer + Duration::from_secs(59)),
+            "59s ago"
+        );
+        assert_eq!(
+            event_time(Some(summer), summer + Duration::from_secs(3599)),
+            "59m ago"
+        );
+        assert_eq!(
+            event_time(Some(summer), summer + Duration::from_secs(3600)),
+            "20 Oct 11:00 CEST"
+        );
+        let winter = time("2026-12-20T23:30:00Z");
+        assert_eq!(
+            event_time(Some(winter), winter + Duration::from_secs(7200)),
+            "21 Dec 00:30 CET"
+        );
+        assert_eq!(event_time(None, summer), "—");
+        assert_eq!(fit_cell("界abcdef", 5), "界ab…");
+    }
+
+    #[test]
+    fn status_filters_keep_matching_selection_and_reconcile_on_activity_changes() {
+        let mut app = App::new();
+        app.reconcile(vec![session("a", "/alpha"), session("b", "/alpha")]);
+        app.activity.entry("a".into()).or_default().state = activity::State::Working;
+        app.status_filter = StatusFilter::Working;
+        app.rebuild(Some("a".into()));
+        assert_eq!(app.row_key().as_deref(), Some("a"));
+        app.observe(Snapshot {
+            sessions: vec![(
+                "a".into(),
+                Some(activity::Observation::parse(
+                    "› Task\n• Done\n› draft\n70% context left",
+                    crate::process::Provider::Codex,
+                )),
+            )],
+            focused: None,
+            metadata: Default::default(),
+        });
+        assert!(app.row_key().is_none());
+        app.status_filter = StatusFilter::All;
+        app.rebuild(None);
+        assert!(app.row_key().is_some());
+    }
+
+    #[test]
+    fn dashboard_renders_timing_and_metadata_without_losing_history() {
+        let mut app = content_app();
+        let mut s = session("a", "/Users/user/Projects/sova");
+        s.location = Some(crate::iterm::Pane {
+            id: "fixture-pane".into(),
+            tty: "/dev/ttys001".into(),
+            root_pid: 1,
+            window_id: 1,
+            window: "Agents".into(),
+            tab: "Sova".into(),
+            tab_index: 0,
+            pane_index: 0,
+            name: "Refresh session dashboard".into(),
+        });
+        app.reconcile(vec![s]);
+        app.set_content(Some((
+            "a".into(),
+            Ok(content::parse(
+                "› Keep the iteration history\n• Preserved\n› draft\n70% context left",
+                crate::process::Provider::Codex,
+            )),
+        )));
+        let now = SystemTime::now();
+        let mut progress = Progress::default();
+        progress.state = activity::State::Working;
+        progress.model = Some("gpt-6.1-sol".into());
+        progress.reasoning = Some("medium".into());
+        progress.request = Some("Keep the iteration history".into());
+        progress.updated_at = Some(now - Duration::from_secs(15));
+        progress.requested_at = Some(now - Duration::from_secs(7200));
+        progress.native_metadata = true;
+        app.activity.insert("a".into(), progress);
+        let t = crate::theme::get("calm").unwrap();
+        let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(160, 36)).unwrap();
+        term.draw(|f| draw(f, &mut app, &t)).unwrap();
+        let rendered = (0..36)
+            .map(|y| {
+                (0..160)
+                    .map(|x| term.backend().buffer()[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        for expected in [
+            "Updated",
+            "Request",
+            "Working",
+            "15s ago",
+            "gpt-6.1-sol",
+            "medium",
+            "Keep the iteration history",
+        ] {
+            assert!(rendered.contains(expected), "{expected}");
+        }
+        assert!(!rendered.contains("120m ago"));
+        if std::env::var_os("SOVA_PRINT_FIXTURE").is_some() {
+            println!("{rendered}");
+        }
+        switch_view(&mut app, true);
+        assert!(text(reader(&app, &t)).contains("Preserved"));
+    }
     use crate::content::Role;
     fn session(id: &str, project: &str) -> Session {
         Session {
@@ -1407,9 +1798,14 @@ mod tests {
                     state,
                     answer,
                     attention: Attention::None,
+                    request: None,
+                    model: None,
+                    reasoning: None,
+                    last_message: None,
                 }),
             )],
             focused: None,
+            metadata: Default::default(),
         };
         app.observe(snapshot(State::Working, None));
         app.observe(snapshot(State::Idle, Some(1)));
@@ -1432,8 +1828,8 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(sidebar.contains("◆ Codex"));
-        assert!(!sidebar.contains("Ready"));
+        assert!(sidebar.contains("◆"));
+        assert!(sidebar.contains("Ready"));
         app.reconcile(vec![
             session("b", "/alpha"),
             session("new-pid-start", "/alpha"),
@@ -1473,7 +1869,8 @@ mod tests {
             .collect::<String>();
         for expected in [
             &format!("Sova v{}", env!("CARGO_PKG_VERSION")),
-            "SESSION",
+            "Model",
+            "Reasoning",
             "TERMINAL",
         ] {
             assert!(text.contains(expected), "{expected}");
@@ -1488,7 +1885,7 @@ mod tests {
         assert!(!text.contains("LATEST EXCHANGE"));
         assert!(!text.contains("Git root"));
         assert!(!text.contains("Pane UUID"));
-        assert!(!text.contains("Request"));
+        assert!(!text.contains("Answer"));
         switch_view(&mut app, true);
         term.draw(|f| draw(f, &mut app, &t)).unwrap();
         let rendered = term
@@ -1701,7 +2098,6 @@ mod tests {
             ));
         };
         let selected = app.row_key();
-        press(KeyCode::Tab, &mut app, &mut t);
         assert_eq!(app.focus, Focus::Sessions);
         press(KeyCode::Char('f'), &mut app, &mut t);
         assert!(app.history_view);
@@ -1847,7 +2243,7 @@ mod tests {
                 } else {
                     assert!(rendered.contains("Sessions"));
                     assert!(rendered.contains("Details"));
-                    assert!(!rendered.contains("History"));
+                    assert!(!rendered.contains("END_OF_REPLY"));
                 }
                 let before = app.row_key();
                 let focus = app.focus;

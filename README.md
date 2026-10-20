@@ -108,14 +108,25 @@ The regular interface shows numbers starting from one.
 The main letter keys also work in the Russian keyboard layout. In search, letters
 are entered as text. To clear an applied filter, press `/`, then Esc.
 
-Two columns take the full available height: 40% on the left, 60% on the right.
+Two columns take the full available height: Sessions uses 65% for the task table
+and 35% for details; History keeps 40% / 60% for iterations and full text.
 At startup this is **Sessions | Details**. **f** switches both panes to
 **History | Content** of the selected session; pressing **f** again returns to the session list.
 The minimum terminal size is 50×12; a narrow window keeps two columns.
 
 Groups show the folder name; identical names are distinguished by the parent folder.
-Full paths stay in Details. Details also shows the session name, window, tab,
-pane, Folder and identifiers. Sections are separated by lines.
+Full paths stay in Details. The table shows title, status, last update and last
+request; timings move to Details in narrow windows. Tab / Shift+Tab cycles status
+filters with counts. Details starts with model, reasoning, project and recent
+request/answer, followed by terminal metadata and identifiers. Sections use rules.
+Times below one hour use seconds/minutes; older events show date and Warsaw
+clock time (CET/CEST). A dash means unknown; ~ marks an observed change time.
+Model/reasoning and exact times come from a local provider file only when bound
+to the live process: an open Codex rollout or the Claude PID/start/session registry.
+Only the last 1 MiB is read per refresh; unavailable older fields remain unknown.
+No conversation is selected by matching folder or recency. Nothing is uploaded.
+Current Codex clients using a shared app-server may hold no rollout file; their
+model/reasoning and provider timestamps remain unknown unless visible in the pane.
 The name comes from the terminal title; it may differ from the agent's chat name.
 Sova does not rename chats or tabs: that stays in the agent/iTerm2.
 
