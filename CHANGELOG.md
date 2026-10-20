@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-20
+
 - Keep Updated visible in narrow terminals, separate columns and truncate Unicode titles cleanly; remove redundant request-time columns, `ago`, approximation prefixes and the home heading.
 - Distinguish New reply, Opened and Untracked opening history; record visits to initially idle panes and retain opening state when response markers disappear.
 - Reorder Details into overview/project/request/answer with bounded previews; move technical fields and data-source explanations to a separate Session Info view.
