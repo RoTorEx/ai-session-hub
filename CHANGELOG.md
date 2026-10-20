@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-20
+
 - Rename the product to AI Session Hub (`ai-session-hub`), including the GitHub repository, CLI, TUI, release assets, installation and configuration paths.
 - Copy existing Sova settings before falling back to FleetScope settings on first installation; preserve existing settings and all historical releases.
 
