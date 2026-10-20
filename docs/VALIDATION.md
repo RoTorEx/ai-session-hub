@@ -310,4 +310,52 @@ renamed archive. Official actionlint 1.7.12 passed with shellcheck disabled.
 Migration checks covered FleetScope fallback, Sova precedence, preserving both
 source files, preserving an existing destination, explicit configuration override,
 repeat installation and command resolution from a fresh interactive zsh.
-Published-asset installation and real self-update remain post-publish checks.
+Published-asset installation and real self-update passed as recorded below.
+
+
+### Local installation and runtime
+
+Prepared `v0.3.0` with the interactive `make release` workflow and pushed main
+and its annotated tag using `make release-push`. Both release checks passed.
+The checkout moved to
+`~/Documents/WorkSpace/Development/personal/cli/ai-session-hub` without replacing
+its Git history or working tree.
+
+Installed the built 0.3.0 archive at
+`~/.x-cli-ai-session-hub/bin/ai-session-hub`. The installed bytes matched the
+built payload; settings were copied byte-for-byte from `~/.config/sova` to
+`~/.config/ai-session-hub`, leaving the source intact. A fresh interactive zsh
+resolved the new CLI and reported 0.3.0; the superseded Sova binary and its exact
+managed PATH block were removed only after verification.
+
+Direct interactive TUI verification displayed `AI Session Hub v0.3.0`, discovered
+10 live sessions, switched Sessions/Details to History/Content, displayed retained
+iteration text, returned to Sessions, opened and closed help, and quit cleanly.
+The installed `list --json` independently returned 10 Codex sessions with distinct
+identities. All three version entry points and generated CLI help use the new name.
+No new Claude session was launched for this rename; parser/identity coverage is
+included in the passing Rust checks.
+
+
+### Public release verification
+
+The macOS build in [run 39462907463](https://github.com/RoTorEx/ai-session-hub/actions/runs/39462907463)
+remained queued for approximately seven minutes without starting a step. Cancelled
+that task-owned run and published the locally verified Apple Silicon package for
+the same annotated tag. A fresh `make smoke-install` passed before publication;
+code and delivery files matched `v0.3.0`. No publishing policy or workflow was
+changed for this one-off runner fallback. The release notes disclose the route.
+
+[AI Session Hub v0.3.0](https://github.com/RoTorEx/ai-session-hub/releases/tag/v0.3.0)
+is public, non-draft and non-prerelease. Read back and downloaded all three assets:
+`ai-session-hub-install.sh`, `ai-session-hub-macos-aarch64.tar.gz` and its SHA-256
+file. Verified the archive digest and published installer bytes against source.
+The public latest-download installer URL also returned those exact bytes.
+
+Executed the published installer for pinned 0.3.0 against the real installation.
+The installed binary matched the downloaded archive payload byte-for-byte;
+existing settings and the original Sova settings remained unchanged. An isolated
+renamed prerelease 0.2.5 binary successfully updated through the public latest URL
+to 0.3.0 and matched that same payload. Updating the real installed 0.3.0 reported
+already up to date. Temporary verification files and generated build/package
+outputs were removed after these checks.
