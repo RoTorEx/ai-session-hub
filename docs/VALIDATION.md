@@ -407,3 +407,24 @@ live Jump was performed; their unchanged binding/navigation boundaries remain
 covered by the existing checks. This is a local development build at 0.3.0;
 no new release tag or public release was created for this task. Generated build
 and package outputs were removed after verification.
+
+
+## Patch release 0.3.1 — 2026-10-20
+
+Prepared the patch with interactive `make release` and pushed main plus the
+annotated `v0.3.1` tag using `make release-push`. Both required check passes
+succeeded, including 47 Rust tests. Local `make smoke-install` also passed.
+
+[Release workflow 39496595426](https://github.com/RoTorEx/ai-session-hub/actions/runs/39496595426)
+completed successfully: macOS build/checks/smoke-install and GitHub publication.
+[v0.3.1](https://github.com/RoTorEx/ai-session-hub/releases/tag/v0.3.1) is public,
+non-draft and non-prerelease, with the expected installer, Apple Silicon archive
+and SHA-256 assets. Downloaded all three, verified the checksum and archive entry
+set, compared the published installer with source, and ran the downloaded binary
+to confirm `ai-session-hub 0.3.1`.
+
+The real installed `ai-session-hub update` fetched the public latest release and
+updated 0.3.0 to 0.3.1. Installed bytes match the published payload exactly and
+the configuration was preserved byte-for-byte. Existing open TUI processes need
+a restart to load the new binary. Task-generated downloads, build and package
+outputs were removed after verification.
