@@ -253,7 +253,8 @@ mod tests {
 
     #[test]
     fn claude_binding_rejects_stale_pid_and_ambiguous_transcripts() {
-        let root = std::env::temp_dir().join(format!("sova-binding-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("ai-session-hub-binding-{}", std::process::id()));
         struct Cleanup(PathBuf);
         impl Drop for Cleanup {
             fn drop(&mut self) {

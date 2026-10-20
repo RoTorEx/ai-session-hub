@@ -664,7 +664,7 @@ pub fn run(config: Config, mut theme: Theme) -> Result<()> {
                             progress.acknowledge();
                         }
                         app.notice = match result {
-                            Ok(()) => "Session opened · Sova stays here".into(),
+                            Ok(()) => "Session opened · AI Session Hub stays here".into(),
                             Err(e) => format!("Jump refused: {e}"),
                         };
                         app.dirty = true;
@@ -1337,7 +1337,7 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
     if area.width < 50 || area.height < 12 {
         f.render_widget(
             Paragraph::new(format!(
-                "Sova v{} · resize to 50 × 12 · q exit",
+                "AI Session Hub v{} · resize to 50 × 12 · q exit",
                 env!("CARGO_PKG_VERSION")
             )),
             area,
@@ -1361,7 +1361,7 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
     };
     let mut heading = vec![Line::from(vec![
         Span::styled(
-            format!("Sova v{}", env!("CARGO_PKG_VERSION")),
+            format!("AI Session Hub v{}", env!("CARGO_PKG_VERSION")),
             Style::default().fg(t.task).add_modifier(Modifier::BOLD),
         ),
         Span::styled(
@@ -1611,7 +1611,7 @@ PageUp/PageDown, Home/End: navigate the focused pane
 ● Working · ○ Idle · ! Approval
 ? Question/action · × Blocked
 ◆ New response ready · ✓ Pane opened · · Unknown
-Opening is not proof of reading. Tracking lasts while Sova is open.
+Opening is not proof of reading. Tracking lasts while AI Session Hub is open.
 
 History is a visible terminal snapshot, not a complete archived chat.
 Message timestamps are unavailable; none are inferred.
@@ -1684,14 +1684,14 @@ mod tests {
     #[test]
     fn dashboard_renders_timing_and_metadata_without_losing_history() {
         let mut app = content_app();
-        let mut s = session("a", "/Users/user/Projects/sova");
+        let mut s = session("a", "/Users/user/Projects/ai-session-hub");
         s.location = Some(crate::iterm::Pane {
             id: "fixture-pane".into(),
             tty: "/dev/ttys001".into(),
             root_pid: 1,
             window_id: 1,
             window: "Agents".into(),
-            tab: "Sova".into(),
+            tab: "AI Session Hub".into(),
             tab_index: 0,
             pane_index: 0,
             name: "Refresh session dashboard".into(),
@@ -1737,7 +1737,7 @@ mod tests {
             assert!(rendered.contains(expected), "{expected}");
         }
         assert!(!rendered.contains("120m ago"));
-        if std::env::var_os("SOVA_PRINT_FIXTURE").is_some() {
+        if std::env::var_os("AI_SESSION_HUB_PRINT_FIXTURE").is_some() {
             println!("{rendered}");
         }
         switch_view(&mut app, true);
@@ -1868,7 +1868,7 @@ mod tests {
             .map(|c| c.symbol())
             .collect::<String>();
         for expected in [
-            &format!("Sova v{}", env!("CARGO_PKG_VERSION")),
+            &format!("AI Session Hub v{}", env!("CARGO_PKG_VERSION")),
             "Model",
             "Reasoning",
             "TERMINAL",
@@ -2299,12 +2299,12 @@ mod tests {
             "~"
         );
         assert_eq!(
-            compact_path_with_home("/Users/alex/sova", Some("/Users/alex")),
-            "sova"
+            compact_path_with_home("/Users/alex/ai-session-hub", Some("/Users/alex")),
+            "ai-session-hub"
         );
         assert_eq!(
-            compact_path_with_home("/work/cli/sova", Some("/Users/alex")),
-            "sova"
+            compact_path_with_home("/work/cli/ai-session-hub", Some("/Users/alex")),
+            "ai-session-hub"
         );
         assert_eq!(
             compact_path_with_home("/Users/alexander/project", Some("/Users/alex")),

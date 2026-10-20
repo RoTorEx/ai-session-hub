@@ -1,10 +1,10 @@
 [package]
-name = "sova"
+name = "ai-session-hub"
 version = "0.2.5"
 edition = "2024"
 description = "Find live Codex and Claude sessions and jump to their iTerm2 panes"
 license = "MIT"
-repository = "https://github.com/RoTorEx/sova"
+repository = "https://github.com/RoTorEx/ai-session-hub"
 
 [dependencies]
 anyhow = "1"

@@ -404,7 +404,7 @@ pub fn scan() -> Result<Vec<Process>> {
 
 #[cfg(not(target_os = "macos"))]
 pub fn scan() -> Result<Vec<Process>> {
-    bail!("Sova supports macOS only")
+    bail!("AI Session Hub supports macOS only")
 }
 
 #[cfg(test)]

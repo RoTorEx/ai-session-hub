@@ -11,16 +11,17 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tar::Archive;
 
-const APP_NAME: &str = "sova";
-const RELEASE_BASE_URL: &str = "https://github.com/RoTorEx/sova/releases/latest/download";
-const MACOS_AARCH64_ASSET: &str = "sova-macos-aarch64.tar.gz";
+const APP_NAME: &str = "ai-session-hub";
+const RELEASE_BASE_URL: &str = "https://github.com/RoTorEx/ai-session-hub/releases/latest/download";
+const MACOS_AARCH64_ASSET: &str = "ai-session-hub-macos-aarch64.tar.gz";
 static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 
 pub fn run() -> Result<()> {
     let asset = release_asset_for(env::consts::OS, env::consts::ARCH).ok_or_else(|| {
-        anyhow::anyhow!("sova update currently supports Apple Silicon macOS only")
+        anyhow::anyhow!("ai-session-hub update currently supports Apple Silicon macOS only")
     })?;
-    let current_exe = env::current_exe().context("cannot locate the current sova executable")?;
+    let current_exe =
+        env::current_exe().context("cannot locate the current ai-session-hub executable")?;
     let temp_dir = UpdateTempDir::create()?;
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(120))
@@ -112,16 +113,16 @@ fn extract_binary(archive_bytes: &[u8], destination: &Path) -> Result<()> {
             continue;
         }
         if found || !entry.header().entry_type().is_file() {
-            bail!("release archive contains an invalid sova entry");
+            bail!("release archive contains an invalid ai-session-hub entry");
         }
         entry
             .unpack(destination)
-            .context("cannot extract updated sova binary")?;
+            .context("cannot extract updated ai-session-hub binary")?;
         found = true;
     }
 
     if !found {
-        bail!("release archive does not contain a sova binary");
+        bail!("release archive does not contain an ai-session-hub binary");
     }
     Ok(())
 }
@@ -137,7 +138,7 @@ fn read_version(binary: &Path) -> Result<String> {
 
 fn version_number(text: &str) -> Result<[u64; 3]> {
     let number = text
-        .strip_prefix("sova ")
+        .strip_prefix("ai-session-hub ")
         .context("Invalid binary name in version")?;
     let parts = number
         .split('.')
@@ -151,12 +152,16 @@ fn version_number(text: &str) -> Result<[u64; 3]> {
 fn install_binary(source: &Path, destination: &Path) -> Result<()> {
     let parent = destination
         .parent()
-        .context("current sova executable has no parent directory")?;
-    let temporary = parent.join(format!(".sova-update-{}", std::process::id()));
+        .context("current ai-session-hub executable has no parent directory")?;
+    let temporary = parent.join(format!(".ai-session-hub-update-{}", std::process::id()));
 
     let result = (|| -> Result<()> {
-        fs::copy(source, &temporary)
-            .with_context(|| format!("cannot copy updated sova to {}", temporary.display()))?;
+        fs::copy(source, &temporary).with_context(|| {
+            format!(
+                "cannot copy updated ai-session-hub to {}",
+                temporary.display()
+            )
+        })?;
         set_executable(&temporary)?;
         fs::rename(&temporary, destination)
             .with_context(|| format!("cannot replace {}", destination.display()))?;
@@ -189,8 +194,10 @@ impl UpdateTempDir {
             .context("system time is before the Unix epoch")?
             .as_nanos();
         let id = NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed);
-        let path =
-            env::temp_dir().join(format!("sova-update-{}-{suffix}-{id}", std::process::id()));
+        let path = env::temp_dir().join(format!(
+            "ai-session-hub-update-{}-{suffix}-{id}",
+            std::process::id()
+        ));
         fs::create_dir(&path)
             .with_context(|| format!("cannot create update directory {}", path.display()))?;
         Ok(Self { path })
@@ -258,7 +265,7 @@ mod tests {
         let temp = UpdateTempDir::create().unwrap();
         let destination = temp.path().join("new-binary");
         let bytes = archive(&[
-            ("nested/sova", tar::EntryType::Regular, b"wrong"),
+            ("nested/ai-session-hub", tar::EntryType::Regular, b"wrong"),
             ("config.toml", tar::EntryType::Regular, b"unwanted"),
             (APP_NAME, tar::EntryType::Regular, b"replacement"),
         ]);
@@ -271,7 +278,7 @@ mod tests {
     fn rejects_missing_duplicate_and_symlink_binaries() {
         let temp = UpdateTempDir::create().unwrap();
         let cases = [
-            archive(&[("nested/sova", tar::EntryType::Regular, b"wrong")]),
+            archive(&[("nested/ai-session-hub", tar::EntryType::Regular, b"wrong")]),
             archive(&[
                 (APP_NAME, tar::EntryType::Regular, b"first"),
                 (APP_NAME, tar::EntryType::Regular, b"second"),
@@ -305,7 +312,7 @@ mod tests {
     fn selects_only_the_published_apple_silicon_asset() {
         assert_eq!(
             release_asset_for("macos", "aarch64"),
-            Some("sova-macos-aarch64.tar.gz")
+            Some("ai-session-hub-macos-aarch64.tar.gz")
         );
         assert_eq!(release_asset_for("macos", "x86_64"), None);
         assert_eq!(release_asset_for("linux", "aarch64"), None);
@@ -314,8 +321,8 @@ mod tests {
     #[test]
     fn accepts_matching_sha256_checksum() {
         verify_checksum(
-            b"sova release",
-            "6fa2732cf5165c5ab2f08b719fd348a255d43d6e228743592578513981c99895  sova.tar.gz",
+            b"ai-session-hub release",
+            "5661971da7f13f6514ac27bb52b64d8231022657bd3782efb4b9ba10f51ea696  ai-session-hub.tar.gz",
         )
         .unwrap();
     }
@@ -324,7 +331,7 @@ mod tests {
     fn rejects_mismatched_sha256_checksum() {
         let error = verify_checksum(
             b"tampered",
-            "6fa2732cf5165c5ab2f08b719fd348a255d43d6e228743592578513981c99895  sova.tar.gz",
+            "5661971da7f13f6514ac27bb52b64d8231022657bd3782efb4b9ba10f51ea696  ai-session-hub.tar.gz",
         )
         .unwrap_err();
 
@@ -333,7 +340,7 @@ mod tests {
 
     #[test]
     fn rejects_malformed_checksum() {
-        let error = parse_checksum("not-a-checksum sova.tar.gz").unwrap_err();
+        let error = parse_checksum("not-a-checksum ai-session-hub.tar.gz").unwrap_err();
 
         assert_eq!(
             error.to_string(),

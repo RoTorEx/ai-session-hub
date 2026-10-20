@@ -31,7 +31,7 @@ jobs:
       - run: make smoke-install
       - uses: actions/upload-artifact@v6
         with:
-          name: sova-macos-aarch64
+          name: ai-session-hub-macos-aarch64
           path: dist/*
           if-no-files-found: error
   publish:
@@ -43,7 +43,7 @@ jobs:
           ref: ${{ inputs.tag || github.ref }}
       - uses: actions/download-artifact@v7
         with:
-          name: sova-macos-aarch64
+          name: ai-session-hub-macos-aarch64
           path: release-assets
       - env:
           GH_TOKEN: ${{ github.token }}

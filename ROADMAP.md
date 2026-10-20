@@ -1,4 +1,4 @@
-# Sova roadmap
+# AI Session Hub roadmap
 
 1. Real-Mac live Codex/Claude discovery and exact pane Jump; waiting agents,
    duplicates and ambiguity refusal. Gates subsequent stages.

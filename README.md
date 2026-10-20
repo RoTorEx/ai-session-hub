@@ -1,8 +1,8 @@
-# Sova
+# AI Session Hub
 
 A local Rust CLI/TUI for viewing already running interactive Codex and Claude
 agents in iTerm2 and jumping to the exact existing pane. The normal way of
-launching agents does not change. Sova types nothing into panes and does not
+launching agents does not change. AI Session Hub types nothing into panes and does not
 control agent processes.
 
 ## Installation
@@ -12,22 +12,22 @@ Verified environment: macOS 26.6.1, iTerm2 3.7.3.
 
 ```sh
 make install-local
-sova
+ai-session-hub
 ```
 
-The binary is installed to `~/.x-cli-sova/bin/sova`; the installer adds a
+The binary is installed to `~/.x-cli-ai-session-hub/bin/ai-session-hub`; the installer adds a
 managed PATH block to `.zshrc` or `.bashrc`. In an already open shell:
 
 ```sh
-export PATH="$HOME/.x-cli-sova/bin:$PATH"
-sova --version
+export PATH="$HOME/.x-cli-ai-session-hub/bin:$PATH"
+ai-session-hub --version
 ```
 
 A prebuilt binary can be installed without Rust:
 
 ```sh
-curl -fsSL https://github.com/RoTorEx/sova/releases/latest/download/sova-install.sh | sh
-sova update
+curl -fsSL https://github.com/RoTorEx/ai-session-hub/releases/latest/download/ai-session-hub-install.sh | sh
+ai-session-hub update
 ```
 
 The installer and updater verify the SHA-256 and the version and replace the
@@ -36,41 +36,47 @@ release yet or the download fails, update exits with an error and keeps the
 installed binary.
 
 On first access macOS may request Automation permission for iTerm2. If it is
-denied, Sova shows why the link is missing and does not perform Jump.
+denied, AI Session Hub shows why the link is missing and does not perform Jump.
 The permission can be changed in System Settings → Privacy & Security → Automation
 for the application from which the command is run. The Python API, shell
-integration, hooks and starting Sova before the agents are not required.
+integration, hooks and starting AI Session Hub before the agents are not required.
 
-## Migrating from FleetScope
+## Migrating from Sova or FleetScope
 
-Starting with 0.2.0 the command is named `sova`. Install it with the new installer
-above: the old `fleet-scope update` does not migrate between package names.
-If there is no Sova configuration yet, the installer copies settings from
-`~/.config/fleet-scope/config.toml` (respecting `XDG_CONFIG_HOME`). An existing
-Sova config and an explicitly set `SOVA_CONFIG` take precedence. The old config
-stays in place until the new installation is verified.
+Starting with 0.3.0 the product is **AI Session Hub** and the command is
+`ai-session-hub`. Install it with the new installer above: `sova update` and
+`fleet-scope update` do not migrate between package names.
 
-After checking `sova --version`, remove the old binary
-`~/.x-cli-fleet-scope/bin/fleet-scope` and the old `# x-cli-fleet-scope` …
-`# /x-cli-fleet-scope` block from the shell profile. In an already open shell, add
-the new PATH as shown above, or open a new terminal. The sources now live in the
-`sova` directory; old tags and releases keep their original file names.
+If the new default configuration is absent, the installer copies
+`~/.config/sova/config.toml`, falling back to `~/.config/fleet-scope/config.toml`
+(respecting `XDG_CONFIG_HOME`). Existing AI Session Hub settings always win.
+An explicit `AI_SESSION_HUB_CONFIG` creates starter settings at that path instead
+of importing legacy defaults. Replace custom `SOVA_CONFIG` / `SOVA_INSTALL_DIR`
+variables with `AI_SESSION_HUB_CONFIG` / `AI_SESSION_HUB_INSTALL_DIR` as needed.
+Source configurations remain untouched.
+
+After checking `ai-session-hub --version` and your settings, remove the old
+`~/.x-cli-sova/bin/sova` binary and its managed `# x-cli-sova` …
+`# /x-cli-sova` shell profile block (or the corresponding FleetScope paths).
+Open a new terminal or add the new PATH as shown above. Existing running views
+keep the old name until restarted. Repository history, tags and earlier release
+assets retain their original identities; current sources live in `ai-session-hub`.
 
 ## Commands
 
 ```sh
-sova                    # Sessions | Details; f → History | Content
-sova list                # fresh list, then exit
-sova --plain             # the same list
-sova list --json         # session array for scripts
-sova jump SESSION_ID     # identifier from the list
-sova version             # also -V / --version
-sova update
-sova setup-config        # create a missing config
-sova themes
-sova theme ocean
-sova benchmark --samples 20 # local benchmark, without Jump
-sova --help
+ai-session-hub                    # Sessions | Details; f → History | Content
+ai-session-hub list                # fresh list, then exit
+ai-session-hub --plain             # the same list
+ai-session-hub list --json         # session array for scripts
+ai-session-hub jump SESSION_ID     # identifier from the list
+ai-session-hub version             # also -V / --version
+ai-session-hub update
+ai-session-hub setup-config        # create a missing config
+ai-session-hub themes
+ai-session-hub theme ocean
+ai-session-hub benchmark --samples 20 # local benchmark, without Jump
+ai-session-hub --help
 ```
 
 Without an interactive terminal, running with no arguments prints help.
@@ -128,7 +134,7 @@ No conversation is selected by matching folder or recency. Nothing is uploaded.
 Current Codex clients using a shared app-server may hold no rollout file; their
 model/reasoning and provider timestamps remain unknown unless visible in the pane.
 The name comes from the terminal title; it may differ from the agent's chat name.
-Sova does not rename chats or tabs: that stays in the agent/iTerm2.
+AI Session Hub does not rename chats or tabs: that stays in the agent/iTerm2.
 
 At startup, focus is on Sessions. In history mode, **Tab / Shift+Tab** switches
 between History and Content for scrolling the full text. Details does not receive
@@ -155,12 +161,12 @@ The version and theme name are always visible at the top; **t** changes the pale
 The calm theme **calm** is used by default; the other themes are available.
 
 After Jump the overview stays open; you can return with normal iTerm2 navigation.
-After exit Sova monitors nothing.
+After exit AI Session Hub monitors nothing.
 
 ## Settings and themes
 
-Config: `$XDG_CONFIG_HOME/sova/config.toml` or
-`~/.config/sova/config.toml`. `SOVA_CONFIG` overrides the path.
+Config: `$XDG_CONFIG_HOME/ai-session-hub/config.toml` or
+`~/.config/ai-session-hub/config.toml`. `AI_SESSION_HUB_CONFIG` overrides the path.
 A missing file does not prevent startup: built-in values are used.
 
 ```toml
@@ -180,15 +186,15 @@ pane, read only in History mode (5 seconds). The status scan does not
 reread the window map or Git roots. On entering History, reading starts right
 after a short 150 ms pause, without waiting for the full interval.
 
-When terminal focus is lost, Sova pauses background polling. Regaining
+When terminal focus is lost, AI Session Hub pauses background polling. Regaining
 focus immediately refreshes processes, locations, statuses and open content.
 This works through iTerm2 focus events, without additional visibility polling;
 if the terminal does not send events, updates continue. The pause also triggers
-when moving to a neighboring pane, even if Sova is still visible. Completions and
+when moving to a neighboring pane, even if AI Session Hub is still visible. Completions and
 manual agent visits during the pause may be missed; `o` still immediately
 records a confirmed jump.
 
-After **60 seconds without user activity** Sova goes to sleep even in a visible
+After **60 seconds without user activity** AI Session Hub goes to sleep even in a visible
 pane: it stops background polling and terminates both `osascript` processes,
 releasing their memory. `SLEEP` appears in the header. Keyboard, mouse or regained
 focus warm up the helpers and refresh data. The first action after sleep may take
@@ -200,7 +206,7 @@ current pane by UUID. It does not wait for the background collection queue.
 
 Refresh does not toggle Live/Updating and does not redraw an unchanged screen.
 Detailed measurements and the limits of the CPU estimate: [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
-To repeat locally: `sova benchmark --samples 20`. Adding
+To repeat locally: `ai-session-hub benchmark --samples 20`. Adding
 `--jump SESSION_ID` also measures real jumps and changes the selected pane.
 
 Themes: calm (default), classic, forest, sunset, ocean, midnight. `theme NAME` preserves the other
@@ -223,9 +229,9 @@ Questions and blockers are recognized from explicit phrases in the visible respo
 The request/response text is in History, the status explanation in Details, the legend in `?` help.
 A question/blocker stays marked after the pane is opened.
 
-Sova tracks opening of the exact active pane in the foreground iTerm2 or
+AI Session Hub tracks opening of the exact active pane in the foreground iTerm2 or
 a successful Jump. Selecting a row and viewing Details do not count as opening.
-This is not confirmation of reading. History is tracked only while Sova is
+This is not confirmation of reading. History is tracked only while AI Session Hub is
 running: responses completed before launch, fast tasks/visits between
 scans and markers hidden off screen may remain unknown.
 
@@ -241,7 +247,7 @@ No Conversation ID is invented.
 
 Only the tail of the snapshot (65,536 characters) stays in memory, up to 32 blocks of 8192 characters each.
 By default a message shows its beginning (4 lines / 280 characters); `e` expands
-the retained part. This is not a full conversation archive. Sova does not store or
+the retained part. This is not a full conversation archive. AI Session Hub does not store or
 send content anywhere; reading does not affect the safety of Jump identification.
 
 Local regular iTerm2 panes and interactive Codex/Claude are supported.
@@ -278,7 +284,7 @@ make release-push   # separate push of the branch and annotated tag
 `make release` updates Cargo.toml/Cargo.lock/CHANGELOG.md and creates the release
 commit and tag, but publishes nothing. Pushing the tag starts GitHub Actions:
 Apple Silicon build, smoke-install, archive + checksum + installer, GitHub Release.
-The target is the public `RoTorEx/sova`; the version comes from Cargo.toml and is checked
+The target is the public `RoTorEx/ai-session-hub`; the version comes from Cargo.toml and is checked
 against the tag. Releasing requires separate approval.
 
 Before the first release or a workflow change, check it with `actionlint
@@ -290,15 +296,15 @@ workflow on main and run `gh workflow run release.yml --ref main -f tag=vX.Y.Z`.
 The manual run builds exactly the existing tag and checks its version and commit;
 the tag does not need to be rewritten. Regular subsequent releases are started by pushing a tag.
 
-Builds are stored in `~/construction_side/sova/target`, packaging in `dist`
+Builds are stored in `~/construction_side/ai-session-hub/target`, packaging in `dist`
 next to it. These directories can be deleted: the sources, the installed binary and the configuration
 do not depend on them. A rebuild recreates them.
 
 ## Uninstallation
 
-Remove `~/.x-cli-sova` and the managed block between `# x-cli-sova`
-and `# /x-cli-sova` from the shell profile. If needed, separately remove
-the selected config and `~/construction_side/sova`. Agent processes and their
+Remove `~/.x-cli-ai-session-hub` and the managed block between `# x-cli-ai-session-hub`
+and `# /x-cli-ai-session-hub` from the shell profile. If needed, separately remove
+the selected config and `~/construction_side/ai-session-hub`. Agent processes and their
 data are not affected.
 
 Product rules: BUSINESS.md; local agent instructions: AGENTS.md;

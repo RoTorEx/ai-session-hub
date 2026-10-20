@@ -50,7 +50,7 @@ def run(binary, root, seconds, profile, iterm, view, activity):
             fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
         process = subprocess.Popen([str(binary)], stdin=slave, stdout=slave, stderr=slave,
                                    preexec_fn=attach,
-                                   env={**os.environ, 'TERM': 'xterm-256color', 'SOVA_CONFIG': str(config)})
+                                   env={**os.environ, 'TERM': 'xterm-256color', 'AI_SESSION_HUB_CONFIG': str(config)})
         owned = [process.pid]
         byte_count = 0
         def drain(duration):
@@ -119,7 +119,7 @@ parser.add_argument('--activity-seconds', type=int, default=10)
 parser.add_argument('--view', choices=['sessions', 'history', 'paused', 'idle'], default='sessions')
 args = parser.parse_args()
 assert args.seconds >= 5
-root = Path.home() / 'construction_side/sova'
+root = Path.home() / 'construction_side/ai-session-hub'
 root.mkdir(parents=True, exist_ok=True)
 iterm = int(subprocess.check_output(['/usr/bin/pgrep', '-x', 'iTerm2'], text=True).strip())
 profiles = [tuple(int(x) for x in args.profile.split('/'))] if args.profile else [(1, 1, 1), (2, 2, 2), (5, 5, 5), (2, 5, 30)]

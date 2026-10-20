@@ -39,7 +39,7 @@ pub fn get(name: &str) -> Result<Theme> {
         "sunset" => include_str!("../themes/sunset.toml"),
         "ocean" => include_str!("../themes/ocean.toml"),
         "midnight" => include_str!("../themes/midnight.toml"),
-        _ => bail!("Unknown theme: {name}; run sova themes"),
+        _ => bail!("Unknown theme: {name}; run ai-session-hub themes"),
     };
     let theme: Theme = toml::from_str(text)?;
     if theme.name != name {

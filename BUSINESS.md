@@ -1,20 +1,24 @@
-# Sova
+# AI Session Hub
 
 Personal macOS Rust CLI/TUI for finding already running interactive Codex and
 Claude agents in existing iTerm2 panes and returning to the exact pane. Users
-keep normal launch commands. Sova never types into panes or starts,
+keep normal launch commands. AI Session Hub never types into panes or starts,
 resumes, stops, or changes agent processes.
 
 ## Name and migration
 
-The product is Sova, executable/package/repository `sova`, starting with minor
-0.2.0. Default installation is `~/.x-cli-sova/bin/sova`, configuration is
-`$XDG_CONFIG_HOME/sova/config.toml` (otherwise `~/.config/sova/config.toml`),
-overrides are `SOVA_INSTALL_DIR` and `SOVA_CONFIG`. Earlier FleetScope tags and
+The product is AI Session Hub, executable/package/repository `ai-session-hub`, starting with minor
+0.3.0. Default installation is `~/.x-cli-ai-session-hub/bin/ai-session-hub`, configuration is
+`$XDG_CONFIG_HOME/ai-session-hub/config.toml` (otherwise `~/.config/ai-session-hub/config.toml`),
+overrides are `AI_SESSION_HUB_INSTALL_DIR` and `AI_SESSION_HUB_CONFIG`. Earlier Sova and FleetScope tags and
 release payloads retain their original identities. The renamed installer copies
-legacy default configuration only when the new default is absent and no explicit
-configuration override was supplied; existing Sova settings always win. Legacy
+Sova default configuration (then FleetScope as a fallback) only when the new default is absent and no explicit
+configuration override was supplied; existing AI Session Hub settings always win. Legacy
 binaries and profile blocks can be removed after the new installation is verified.
+
+The descriptive name makes the purpose discoverable in public repositories.
+The product spans agent providers; current support remains Codex and Claude.
+A Swift app or AI-Fleet integration is exploratory, not part of this rename.
 
 ## Sessions and navigation
 
@@ -88,7 +92,7 @@ remain visible. t cycles palettes and saves the choice immediately.
 The default calm palette uses terminal-default text, neutral separators and a
 muted blue focus accent. Existing gtd palettes remain available as options.
 
-Sova does not rename agent chats, terminal tabs or panes and has no local aliases.
+AI Session Hub does not rename agent chats, terminal tabs or panes and has no local aliases.
 The user explicitly kept those controls with the agent/terminal; native chat
 names can be changed inside supported agent CLIs using their /rename command.
 
@@ -142,7 +146,7 @@ observed opened, ✓ pane opened after readiness, · activity unknown. Questions
 and blockers retain their symbol after opening because they still need user
 attention. Details and help explain symbols; no animation is used.
 
-While Sova has terminal focus, all linked agents receive a read-only status pass
+While AI Session Hub has terminal focus, all linked agents receive a read-only status pass
 on the separate activity timer (10 seconds by default). Native
 PID/start/TTY/ancestry is checked once per batch; the terminal bridge confirms
 UUID-selected pane TTY/root and returns only its last 24 visible rows, at most
@@ -158,10 +162,10 @@ missing markers mean unknown, not idle or successful task completion.
 
 Opening is observed only when iTerm2 is frontmost and the exact linked pane is
 active at a status sample, or after a successful identity-validated Jump. Status
-sampling pauses without Sova terminal focus, so manual visits during the pause
+sampling pauses without AI Session Hub terminal focus, so manual visits during the pause
 are not retrospectively acknowledged. Jump still acknowledges immediately. List
 selection/details previews never acknowledge a result. Opening is not proof of
-reading. State lasts only while Sova is open; initial Idle has unknown
+reading. State lasts only while AI Session Hub is open; initial Idle has unknown
 opening history. Work/visits entirely between polls and offscreen response
 markers may be missed. Closed/replaced process identities lose their state;
 scan failures show unknown while retaining pending opening history.
@@ -182,14 +186,14 @@ timer after the 150 ms selection debounce. Entering History invalidates its read
 timer so cached text does not delay the next read. Sessions reads only compact
 all-session status, not full selected content.
 
-Sova enables terminal focus reporting (DECSET 1004). FocusOut pauses new native,
+AI Session Hub enables terminal focus reporting (DECSET 1004). FocusOut pauses new native,
 metadata, status and content requests, also when another pane gains focus while
-Sova remains visible. Already dispatched requests may finish. FocusIn immediately
+AI Session Hub remains visible. Already dispatched requests may finish. FocusIn immediately
 requests a fresh pane/process map, status and, in History, full content. A pending
 scan does not discard the forced refresh; session, mode and iteration selection
 are retained when still valid. No visibility polling or new helper is added.
 Without focus events, polling continues until the user-idle timeout. After 60
-seconds without keyboard/mouse input or FocusIn, Sova enters sleep, pauses all
+seconds without keyboard/mouse input or FocusIn, AI Session Hub enters sleep, pauses all
 background requests and drops both helper clients; their osascript processes are
 killed and reaped. Input or FocusIn restarts both clients, forces fresh metadata,
 status and relevant content, and retains selection/mode. Poll replies and agent
@@ -210,7 +214,7 @@ Failed scans are distinct from an empty list; prior results are marked stale.
 |---|---|---|---|
 | 2 | seconds | Native inventory; prompt opening/exit detection at low cost | User correction + measured benchmark; positive config, reconciliation/identity checks |
 | 5 | seconds | Full selected content only while History is focused/visible | Preserve reader freshness while avoiding unused Sessions reads; scheduler/reader checks |
-| 10 | seconds | Compact all-session status while Sova has terminal focus | User chose reduced polling; twice the old interval, delayed readiness/opening observation; independent timer tests |
+| 10 | seconds | Compact all-session status while AI Session Hub has terminal focus | User chose reduced polling; twice the old interval, delayed readiness/opening observation; independent timer tests |
 | 60 | seconds | No user input before releasing both helpers and pausing all scans | User request: reduce idle CPU and runtime memory; keyboard/mouse/FocusIn reset, timer scans do not; scheduler and installed lifecycle checks |
 | 1 | second | Maximum idle event wait while unfocused or sleeping | Reduce wakeups; terminal FocusIn wakes immediately, signal/exit and PTY checks |
 | 30 | seconds | Full pane/location and Git-root map; moves are uncommon | User explanation; new identities/r bypass timer, Jump resolves current UUID independently |
@@ -229,9 +233,9 @@ can promise zero load on every machine; measured defaults balance freshness and
 CPU cost, with manual refresh and independently configurable timers.
 Commands follow neighbors: help, version, update, setup-config, themes/theme.
 Themes: calm (default), classic, forest, sunset, ocean, midnight; independent calm
-palette plus optional gtd color families. XDG config and SOVA_CONFIG override. Install/update
-preserve configuration. Binary: ~/.x-cli-sova/bin. Build cache:
-~/construction_side/sova. Public release: RoTorEx/sova, Apple Silicon
+palette plus optional gtd color families. XDG config and AI_SESSION_HUB_CONFIG override. Install/update
+preserve configuration. Binary: ~/.x-cli-ai-session-hub/bin. Build cache:
+~/construction_side/ai-session-hub. Public release: RoTorEx/ai-session-hub, Apple Silicon
 macOS only. Release preparation/push are separate; real release needs approval.
 
 ## Non-goals

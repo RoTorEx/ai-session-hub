@@ -27,14 +27,14 @@ impl Default for Config {
 }
 
 pub fn path() -> Result<PathBuf> {
-    if let Some(p) = env::var_os("SOVA_CONFIG") {
+    if let Some(p) = env::var_os("AI_SESSION_HUB_CONFIG") {
         return Ok(p.into());
     }
     let root = env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .or_else(|| env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
-        .context("Set HOME or SOVA_CONFIG")?;
-    Ok(root.join("sova/config.toml"))
+        .context("Set HOME or AI_SESSION_HUB_CONFIG")?;
+    Ok(root.join("ai-session-hub/config.toml"))
 }
 pub fn load() -> Result<Config> {
     let p = path()?;
@@ -98,7 +98,7 @@ pub fn save_theme(name: &str) -> Result<()> {
             .filter(|p| !p.as_os_str().is_empty())
             .unwrap_or(Path::new(".")),
     )?;
-    let temp = p.with_file_name(format!(".sova-config-{}.tmp", std::process::id()));
+    let temp = p.with_file_name(format!(".ai-session-hub-config-{}.tmp", std::process::id()));
     let result = (|| -> Result<()> {
         fs::write(&temp, doc.to_string())?;
         fs::rename(&temp, &p)?;

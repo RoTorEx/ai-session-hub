@@ -1,8 +1,8 @@
 .PHONY: bench install install-local build run test lint fmt check version package-release smoke-install release release-push vibe-kernel-path vibe-kernel-set vibe-pull
 
-CARGO_TARGET_DIR ?= $(HOME)/construction_side/sova/target
-DIST_DIR ?= $(HOME)/construction_side/sova/dist
-INSTALL_DIR ?= $(HOME)/.x-cli-sova
+CARGO_TARGET_DIR ?= $(HOME)/construction_side/ai-session-hub/target
+DIST_DIR ?= $(HOME)/construction_side/ai-session-hub/dist
+INSTALL_DIR ?= $(HOME)/.x-cli-ai-session-hub
 export CARGO_TARGET_DIR
 
 build:
@@ -11,10 +11,10 @@ build:
 install: install-local
 
 install-local: package-release
-	sh scripts/install.sh --archive "$(DIST_DIR)/sova-macos-aarch64.tar.gz" --install-dir "$(INSTALL_DIR)"
+	sh scripts/install.sh --archive "$(DIST_DIR)/ai-session-hub-macos-aarch64.tar.gz" --install-dir "$(INSTALL_DIR)"
 
 bench: build
-	"$(CARGO_TARGET_DIR)/release/sova" benchmark --samples 20
+	"$(CARGO_TARGET_DIR)/release/ai-session-hub" benchmark --samples 20
 
 run:
 	cargo run --locked --
@@ -41,10 +41,10 @@ version:
 	cargo run --locked -- --version
 
 package-release: build
-	sh scripts/package-release.sh "$(CARGO_TARGET_DIR)/release/sova" "$(DIST_DIR)"
+	sh scripts/package-release.sh "$(CARGO_TARGET_DIR)/release/ai-session-hub" "$(DIST_DIR)"
 
 smoke-install: package-release
-	python3 scripts/check-delivery.py --archive "$(DIST_DIR)/sova-macos-aarch64.tar.gz"
+	python3 scripts/check-delivery.py --archive "$(DIST_DIR)/ai-session-hub-macos-aarch64.tar.gz"
 
 release:
 	sh scripts/release.sh

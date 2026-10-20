@@ -1,6 +1,6 @@
 # Validation evidence
 
-Historical FleetScope checks below retain their original binary names. The project is now Sova.
+Historical FleetScope checks below retain their original binary names. The project is now AI Session Hub.
 
 ## Stage 1 — 2026-10-09
 
@@ -90,10 +90,10 @@ Annotated v0.1.0 points to 2e2470c83d37f0fd25aa7a4385ec7b587386c43d.
 The first push was rejected before any jobs ran: runner.temp was invalid in
 job-level env. The repaired main workflow passed actionlint; its manual existing-
 tag path checked out and verified the unchanged release tag. GitHub Actions run
-[37938769095](https://github.com/RoTorEx/sova/actions/runs/37938769095)
+[37938769095](https://github.com/RoTorEx/ai-session-hub/actions/runs/37938769095)
 succeeded on native aarch64-apple-darwin: format, clippy, 22 Rust tests, release
 build, delivery fixtures and smoke-install. The publish job created the public
-[v0.1.0 Release](https://github.com/RoTorEx/sova/releases/tag/v0.1.0)
+[v0.1.0 Release](https://github.com/RoTorEx/ai-session-hub/releases/tag/v0.1.0)
 with the arm64 archive, adjacent SHA-256 and installer.
 
 Downloaded published assets, checked SHA-256 and archive members, ran the
@@ -122,9 +122,9 @@ drop; make check passes all 23 tests. This fix and the workflow repair shipped
 in the 0.1.1 patch; the published 0.1.0 tag remains unchanged.
 
 The ordinary tag-push workflow published
-[v0.1.1](https://github.com/RoTorEx/sova/releases/tag/v0.1.1) from
+[v0.1.1](https://github.com/RoTorEx/ai-session-hub/releases/tag/v0.1.1) from
 3587162860f31af1fcc1b2ac9db7f46c00bf5313; both jobs in
-[run 37939561696](https://github.com/RoTorEx/sova/actions/runs/37939561696)
+[run 37939561696](https://github.com/RoTorEx/ai-session-hub/actions/runs/37939561696)
 succeeded, including all 23 tests and both delivery checks. Downloaded and
 verified the three assets. Actual installed self-update replaced 0.1.0 with
 0.1.1; all three version commands, a repeat Already up to date, unchanged
@@ -169,12 +169,12 @@ and the user's sessions/config remain.
 Renamed the existing repository to RoTorEx/sova, preserving repository ID
 R_kgDOVBsRLA, prior history, tags and releases. Annotated v0.2.0 points to
 9681e579d854baec6f42ddc3ea3bf766e685fa0a. Native Apple Silicon build and publish
-both succeeded in [run 37950947956](https://github.com/RoTorEx/sova/actions/runs/37950947956).
+both succeeded in [run 37950947956](https://github.com/RoTorEx/ai-session-hub/actions/runs/37950947956).
 The workflow passed actionlint preflight; make check passed 27 Rust tests and
 isolated delivery checks, including default legacy config migration, existing
 Sova settings precedence and explicit config overrides. Smoke-install passed.
 
-Downloaded the three [published v0.2.0 assets](https://github.com/RoTorEx/sova/releases/tag/v0.2.0).
+Downloaded the three [published v0.2.0 assets](https://github.com/RoTorEx/ai-session-hub/releases/tag/v0.2.0).
 Verified the archive checksum and exact four regular-file entries. Installed
 through the published installer into ~/.x-cli-sova/bin/sova; installed bytes
 match the published payload. --version, -V and version all report sova 0.2.0.
@@ -292,3 +292,22 @@ contract; these fields remain unknown unless observed directly in terminal text.
 The open-rollout parser is fixture-tested, not validated against a live older
 Codex writer in this run. The history browser remains a visible-screen snapshot.
 No release tag or published package was created.
+
+
+## AI Session Hub rename preflight — 2026-10-20
+
+The existing GitHub repository was renamed to `RoTorEx/ai-session-hub` with
+repository ID `1411060012` (`R_kgDOVBsRLA`) preserved. Local origin now uses the
+new SSH URL. Current CLI, TUI, package, installer, updater, configuration,
+release workflow and documentation use AI Session Hub / `ai-session-hub`.
+Historical measurements and old release identities remain intact.
+
+Self-review traced installer, archive contents, updater asset URLs, binary version
+validation, release metadata and Actions artifact upload/download names.
+`make check` passed (formatting, clippy, 43 Rust tests, release build, shell syntax
+and isolated delivery/release checks). `make smoke-install` passed using the
+renamed archive. Official actionlint 1.7.12 passed with shellcheck disabled.
+Migration checks covered FleetScope fallback, Sova precedence, preserving both
+source files, preserving an existing destination, explicit configuration override,
+repeat installation and command resolution from a fresh interactive zsh.
+Published-asset installation and real self-update remain post-publish checks.

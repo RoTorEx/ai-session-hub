@@ -1,6 +1,6 @@
 # Reused sources
 
 The gtd palettes and interface symbols and release/updater mechanics are adapted
-from https://github.com/RoTorEx/gtd (MIT, same author). Sova uses neither
+from https://github.com/RoTorEx/gtd (MIT, same author). AI Session Hub uses neither
 Todoist behavior nor task models. Atria and AgentMonitor were research references;
 no source code was copied from them.

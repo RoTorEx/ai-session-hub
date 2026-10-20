@@ -1,6 +1,6 @@
 # Local measurements — 2026-10-09
 
-Measurements below were recorded before the rename from FleetScope to Sova.
+Historical measurements retain their original FleetScope and Sova labels. Current commands use AI Session Hub.
 
 macOS 26.6.1 arm64, iTerm2 3.7.3; live Codex agents and other terminal tasks
 kept running. These are measurements of this machine, not a guarantee of a universal
@@ -13,7 +13,7 @@ current agent pane, median **2114 ms**. The CLI additionally collected the list
 before the shared Jump, which performed a full collection again. Its latency is not
 equal to a single Apple Event. The set of live processes changed as the user worked.
 
-After the changes, `sova benchmark --samples 20 --jump SESSION_ID`:
+After the changes, `ai-session-hub benchmark --samples 20 --jump SESSION_ID`:
 7 agents. The inventory and channel are warmed up; Jump measures the same shared path
 the TUI uses, without CLI startup/the first full list.
 
@@ -80,10 +80,10 @@ scrollback contents, the number of panes and terminal load.
 
 ```sh
 make bench
-sova benchmark --samples 20
+ai-session-hub benchmark --samples 20
 # Only if you actually intend to select an existing pane:
-sova benchmark --samples 20 --jump SESSION_ID
-python3 scripts/benchmark-intervals.py --binary ~/.x-cli-sova/bin/sova --seconds 15
+ai-session-hub benchmark --samples 20 --jump SESSION_ID
+python3 scripts/benchmark-intervals.py --binary ~/.x-cli-ai-session-hub/bin/ai-session-hub --seconds 15
 ```
 
 The interval script closes only its own TUI/helper processes and temporary configs.
@@ -143,9 +143,9 @@ On FocusIn (`ESC [ I`) refresh requests resume immediately.
 Physical memory and rare wakeups remain, so this is not zero cost.
 
 ```sh
-python3 scripts/benchmark-intervals.py --binary ~/.x-cli-sova/bin/sova --seconds 20 --profile 2/5/30 --view sessions
-python3 scripts/benchmark-intervals.py --binary ~/.x-cli-sova/bin/sova --seconds 20 --profile 2/5/30 --view history
-python3 scripts/benchmark-intervals.py --binary ~/.x-cli-sova/bin/sova --seconds 20 --profile 2/5/30 --view paused
+python3 scripts/benchmark-intervals.py --binary ~/.x-cli-ai-session-hub/bin/ai-session-hub --seconds 20 --profile 2/5/30 --view sessions
+python3 scripts/benchmark-intervals.py --binary ~/.x-cli-ai-session-hub/bin/ai-session-hub --seconds 20 --profile 2/5/30 --view history
+python3 scripts/benchmark-intervals.py --binary ~/.x-cli-ai-session-hub/bin/ai-session-hub --seconds 20 --profile 2/5/30 --view paused
 ```
 
 `--activity-seconds` sets the independent status interval (10 by default).
@@ -173,7 +173,7 @@ measured separately in this check.
 To repeat the resource measurement after a real idle timeout:
 
 ```sh
-python3 scripts/benchmark-intervals.py --binary ~/.x-cli-sova/bin/sova --seconds 20 --profile 2/5/30 --view idle
+python3 scripts/benchmark-intervals.py --binary ~/.x-cli-ai-session-hub/bin/ai-session-hub --seconds 20 --profile 2/5/30 --view idle
 ```
 
 The idle mode waits for the real timeout, verifies that the helpers disappear and then
