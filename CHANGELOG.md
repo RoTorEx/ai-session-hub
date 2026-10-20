@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-10-20
+
 - Redesign Sessions as a grouped task/status/update/request table with status filters and a 65% / 35% layout.
 - Show model, reasoning, project and latest request/answer in Details while retaining the iteration History reader.
 - Read bounded local provider metadata only with process/session binding; distinguish observed times and show Warsaw calendar times after one hour.
