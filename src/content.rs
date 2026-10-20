@@ -27,11 +27,13 @@ pub struct Message {
     pub role: Role,
     pub text: String,
 }
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Content {
     pub state: &'static str,
     pub messages: Vec<Message>,
     pub context: String,
+    pub model: Option<String>,
+    pub reasoning: Option<String>,
 }
 pub fn read(session: &Session, terminal: &mut iterm::Client) -> Result<Content> {
     let pane = model::validate(session)?;
@@ -153,8 +155,19 @@ pub fn parse(text: &str, provider: Provider) -> Content {
         state,
         messages,
         context,
+        model: metadata(text, "model"),
+        reasoning: metadata(text, "reasoning").or_else(|| metadata(text, "effort")),
     }
 }
+fn metadata(text: &str, label: &str) -> Option<String> {
+    text.lines().find_map(|line| {
+        let line = line.trim().trim_matches(['│', ' ']);
+        let (key, value) = line.split_once(':')?;
+        (key.trim().eq_ignore_ascii_case(label) && !value.trim().is_empty())
+            .then(|| value.trim().to_owned())
+    })
+}
+
 fn push(messages: &mut Vec<Message>, mut message: Message) {
     message.text = message.text.trim().chars().take(8192).collect();
     if !message.text.is_empty() {

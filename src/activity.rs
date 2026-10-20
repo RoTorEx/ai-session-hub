@@ -70,19 +70,11 @@ impl Observation {
                 .rev()
                 .find(|m| m.role == Role::You)
                 .map(|m| m.text.clone()),
-            model: metadata(text, "model"),
-            reasoning: metadata(text, "reasoning").or_else(|| metadata(text, "effort")),
+            model: c.model.clone(),
+            reasoning: c.reasoning.clone(),
             last_message: message.map(|m| m.text.clone()),
         }
     }
-}
-fn metadata(text: &str, label: &str) -> Option<String> {
-    text.lines().find_map(|line| {
-        let line = line.trim().trim_matches(['│', ' ']);
-        let (key, value) = line.split_once(':')?;
-        (key.trim().eq_ignore_ascii_case(label) && !value.trim().is_empty())
-            .then(|| value.trim().to_owned())
-    })
 }
 fn attention(text: &str) -> Attention {
     let text = text.to_lowercase();
@@ -156,9 +148,9 @@ impl Progress {
     pub fn symbol(&self) -> &'static str {
         match self.label() {
             "Working" => "●",
-            "Idle" => "○",
+            "Untracked" => "○",
             "Approval" => "!",
-            "Ready" => "◆",
+            "New reply" => "◆",
             "Opened" => "✓",
             "Question" => "?",
             "Blocked" => "×",
@@ -212,17 +204,19 @@ impl Progress {
                 self.ready = o.answer.is_some() && o.answer != self.baseline;
                 self.working = false;
             }
-            if self.opened && o.answer != self.last_answer {
+            if self.opened && o.answer.is_some() && o.answer != self.last_answer {
                 self.opened = false;
             }
-            self.last_answer = o.answer;
+            if o.answer.is_some() {
+                self.last_answer = o.answer;
+            }
         }
-        if self.ready && focused && self.state == State::Idle {
+        if focused && self.state == State::Idle {
             self.acknowledge();
         }
     }
     pub fn acknowledge(&mut self) {
-        if self.ready && self.state == State::Idle {
+        if self.state == State::Idle {
             self.ready = false;
             self.opened = true;
         }
@@ -231,19 +225,19 @@ impl Progress {
         match self.state {
             State::Working => "Working",
             State::Approval => "Approval",
-            State::Unknown => "?",
+            State::Unknown => "Unknown",
             State::Idle if self.attention == Attention::Blocked => "Blocked",
             State::Idle if self.attention == Attention::Question => "Question",
-            State::Idle if self.ready => "Ready",
+            State::Idle if self.ready => "New reply",
             State::Idle if self.opened => "Opened",
-            State::Idle => "Idle",
+            State::Idle => "Untracked",
         }
     }
     pub fn explanation(&self) -> &'static str {
         match self.label() {
-            "Ready" => "Idle · new response ready · pane not observed open",
-            "Opened" => "Idle · pane opened after response was ready",
-            "Idle" => "Idle · earlier opening history unknown",
+            "New reply" => "New response · not opened since it arrived",
+            "Opened" => "Idle · pane opened · reading not confirmed",
+            "Untracked" => "Idle · opening unknown",
             "Working" => "Working",
             "Approval" => "Needs approval",
             "Question" => "Idle · question or action requested from you",
@@ -255,7 +249,7 @@ impl Progress {
         if self.ready {
             "New response · pane not observed open"
         } else if self.opened {
-            "Pane opened after response was ready · reading unconfirmed"
+            "Pane opened · reading not confirmed"
         } else {
             "Earlier opening history unknown"
         }
@@ -351,26 +345,42 @@ mod tests {
     fn only_new_observed_completion_can_be_ready_and_opening_acknowledges_it() {
         let mut p = Progress::default();
         p.observe(Some(&o(State::Idle, Some(1))), false);
-        assert_eq!(p.label(), "Idle");
+        assert_eq!(p.label(), "Untracked");
         p.observe(Some(&o(State::Working, Some(1))), false);
         p.observe(Some(&o(State::Idle, Some(2))), false);
-        assert_eq!(p.label(), "Ready");
+        assert_eq!(p.label(), "New reply");
         p.observe(None, true);
-        assert_eq!(p.label(), "?");
+        assert_eq!(p.label(), "Unknown");
         p.observe(Some(&o(State::Idle, Some(2))), false);
-        assert_eq!(p.label(), "Ready");
+        assert_eq!(p.label(), "New reply");
         p.observe(Some(&o(State::Idle, Some(2))), true);
         assert_eq!(p.label(), "Opened");
         p.observe(Some(&o(State::Idle, Some(3))), false);
-        assert_eq!(p.label(), "Idle");
+        assert_eq!(p.label(), "Untracked");
         p.observe(Some(&o(State::Idle, Some(2))), false);
         p.observe(Some(&o(State::Working, Some(2))), true);
         assert_eq!(p.label(), "Working");
         p.observe(Some(&o(State::Approval, Some(2))), false);
         assert_eq!(p.label(), "Approval");
         p.observe(Some(&o(State::Idle, Some(2))), false);
-        assert_eq!(p.label(), "Idle");
+        assert_eq!(p.label(), "Untracked");
     }
+    #[test]
+    fn opening_initial_idle_is_recorded_and_missing_response_markers_do_not_erase_it() {
+        let mut p = Progress::default();
+        p.observe(Some(&o(State::Idle, Some(1))), false);
+        assert_eq!(p.label(), "Untracked");
+        p.acknowledge();
+        assert_eq!(p.label(), "Opened");
+        p.observe(Some(&o(State::Idle, None)), false);
+        assert_eq!(p.label(), "Opened");
+        p.observe(Some(&o(State::Idle, Some(1))), false);
+        assert_eq!(p.label(), "Opened");
+        let mut first_visit = Progress::default();
+        first_visit.observe(Some(&o(State::Idle, Some(1))), true);
+        assert_eq!(first_visit.label(), "Opened");
+    }
+
     #[test]
     fn parser_requires_provider_state_and_an_agent_response() {
         let o = Observation::parse(
@@ -456,6 +466,6 @@ mod tests {
         assert!(p.opening().contains("not observed"));
         p.observe(Some(&question), true);
         assert_eq!(p.symbol(), "?");
-        assert!(p.opening().contains("reading unconfirmed"));
+        assert!(p.opening().contains("reading not confirmed"));
     }
 }

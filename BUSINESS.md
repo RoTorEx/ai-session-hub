@@ -35,11 +35,13 @@ paths and terminal contents never authorize Jump. Ambiguity blocks linking.
 Groups use Git worktree roots, otherwise actual working directories. Headings
 are visual separators: keyboard and mouse select only sessions. Groups stay
 expanded. The session list is the entry point. Project headings separate task rows; each
-row shows its title, status, last conversation update and last submitted request.
-Narrow windows retain the title/status and expose full timing in Details. PID,
+row shows its title, explicit activity/opening status and last conversation update.
+Updated remains visible at the 50-column minimum. One-cell gaps separate columns;
+Unicode-aware ellipses keep titles out of the status column. Compact times omit
+"ago" and approximation prefixes. The redundant request-time column is omitted. PID,
 branch arrows and duplicate project/provider suffixes do not clutter each entry.
-Tab/Shift+Tab cycles All, Needs you, Working, Ready and Unknown with counts.
-Ready includes idle/opened sessions; Needs you includes approval/questions/blockers.
+Tab/Shift+Tab cycles All, Needs you, Working, Idle and Unknown with counts.
+Idle includes Untracked, New reply and Opened; Needs you includes approval/questions/blockers.
 Unknown is not labelled inactive because absent markers do not prove inactivity. Refresh preserves selection
 by identity and independent details scroll. Unknown paths do not exclude agents.
 
@@ -57,13 +59,20 @@ The selected session and iteration survive mode switches. History mode keeps a
 fixed header with session name, provider/activity and folder above both panels;
 o still performs the same identity-validated Jump. Search returns to Sessions.
 
-Details starts with the visible session name, provider/status, model, reasoning,
-last-update/request times, project, last submitted request and latest answer when
-known. The History shortcut remains prominent. Terminal window/tab/pane and
-process identity follow below and remain scrollable. Horizontal ruled headings
-separate sections. Names still come from the observed terminal title.
-Groups display the directory basename, or ~ for home. Duplicate basenames include
-the parent directory for distinction; full paths stay in Details and search.
+Details shows the session name, provider/status, available model/reasoning and
+update/request times, project, latest request and latest answer in that order.
+Request and answer previews are limited to three wrapped lines each (two in short windows) so neither
+buries the other; full retained content remains in History. No History shortcut
+or technical sections interrupt these previews. Missing model/reasoning and
+update times are explained, rather than displaying several unlabeled dashes.
+A new provider request with no answer is never paired with an old cached terminal
+answer. Visible selected-pane metadata is used only as an observed fallback.
+The i key toggles a separate Session Info view with data-source limitations,
+terminal location and process identifiers; i or Esc returns to Details. It shares
+the mouse-scroll behavior of Details and never acknowledges a response.
+Names still come from the observed terminal title. Project headings show the
+directory basename; the home-directory heading is omitted. Duplicate basenames
+include the parent directory; full paths stay in Details and search.
 
 History groups each observed user request and all following agent/action blocks
 up to the next request into one iteration. Leading output without its visible
@@ -131,18 +140,20 @@ Last request is the submitted user event. Below one hour, show seconds (below on
 minute) or whole minutes; at one hour and above, show calendar date and clock time
 in Europe/Warsaw with date-specific CET/CEST. The one-hour threshold follows the
 user's request to replace long-running elapsed timers with a useful clock time.
-Initial terminal observations have unknown times. Later observed changes may be
-shown with ~ to distinguish sampling time from provider timestamps; details labels
-the source. Unavailable model/reasoning/times show an em dash, never global config
-defaults. Timer redraws run once per second only while focused/awake and a recent
+Initial terminal observations have unknown times. Later observed changes retain sampling times without a visual approximation
+prefix; Session Info explains the distinction from provider events. In compact
+tables, older events use HH:MM on the same Warsaw calendar day and DD Mon on
+other days; Details retains the full Warsaw date, clock time and CET/CEST.
+Unavailable times use an em dash in the table and an explanation in Details;
+model/reasoning are never inferred from global configuration. Timer redraws run once per second only while focused/awake and a recent
 time is visible; they do not keep helpers awake. Tests cover threshold, DST/day
 rollover, tool-result exclusion, filter reconciliation, resize and history retention.
 
 ## Activity and opening responses
 
-The session list uses one fixed symbol column: ● Working, ○ Idle, ! Approval,
-? question/action requested, × reported blocker, ◆ new response ready and not
-observed opened, ✓ pane opened after readiness, · activity unknown. Questions
+The session list uses one fixed symbol column: ● Working, ○ Untracked (idle; opening history unknown), ! Approval,
+? question/action requested, × reported blocker, ◆ New reply (new response not
+observed opened), ✓ Opened (pane observed open), · activity unknown. Questions
 and blockers retain their symbol after opening because they still need user
 attention. Details and help explain symbols; no animation is used.
 
@@ -153,7 +164,7 @@ UUID-selected pane TTY/root and returns only its last 24 visible rows, at most
 8,192 characters. Parsed status and an in-memory normalized response hash are retained for
 unselected sessions, alongside the bounded metadata described below.
 
-Ready requires an observed Working → Idle transition and a different visible
+New reply requires an observed Working → Idle transition and a different visible
 agent response from the preceding baseline; tool output alone is insufficient.
 Explicit request/blocker phrases in the last eight lines of the latest visible
 agent response and a final question are heuristics, evaluated only while Idle, with approval/work taking priority.
@@ -161,7 +172,9 @@ Old responses before the latest submitted request are excluded. Unsupported or
 missing markers mean unknown, not idle or successful task completion.
 
 Opening is observed only when iTerm2 is frontmost and the exact linked pane is
-active at a status sample, or after a successful identity-validated Jump. Status
+active at a status sample, or after a successful identity-validated Jump. An initial idle session also becomes
+Opened after a confirmed visit, even when its earlier response history is unknown.
+Temporarily absent response markers do not erase a known opening. Status
 sampling pauses without AI Session Hub terminal focus, so manual visits during the pause
 are not retrospectively acknowledged. Jump still acknowledges immediately. List
 selection/details previews never acknowledge a result. Opening is not proof of
@@ -181,15 +194,17 @@ killed/reaped on exit or helper timeout. They never launch iTerm2.
 Lightweight native inventory detects exits/starts; only new agent identities,
 manual refresh or the metadata timer require a fresh pane map. Closed agents are
 removed without re-reading all tabs. Git roots are cached until metadata refresh.
-Full selected content is read only in History | Content, on its own five-second
-timer after the 150 ms selection debounce. Entering History invalidates its read
-timer so cached text does not delay the next read. Sessions reads only compact
-all-session status, not full selected content.
+Full selected content refreshes in History | Content on its own five-second
+timer after the 150 ms selection debounce. Details reads the same bounded visible
+screen once per selection, refresh/focus return, or change to the selected
+request/answer in compact status. It has no periodic full-content timer. This
+recovers requests above the compact 24-row tail without archive guessing or an
+extra helper. Entering History invalidates the timer for an immediate read.
 
 AI Session Hub enables terminal focus reporting (DECSET 1004). FocusOut pauses new native,
 metadata, status and content requests, also when another pane gains focus while
 AI Session Hub remains visible. Already dispatched requests may finish. FocusIn immediately
-requests a fresh pane/process map, status and, in History, full content. A pending
+requests a fresh pane/process map, status and selected preview/history content. A pending
 scan does not discard the forced refresh; session, mode and iteration selection
 are retained when still valid. No visibility polling or new helper is added.
 Without focus events, polling continues until the user-idle timeout. After 60
@@ -213,7 +228,7 @@ Failed scans are distinct from an empty list; prior results are marked stale.
 | Value | Unit | Meaning / reason | Source / impact / checks |
 |---|---|---|---|
 | 2 | seconds | Native inventory; prompt opening/exit detection at low cost | User correction + measured benchmark; positive config, reconciliation/identity checks |
-| 5 | seconds | Full selected content only while History is focused/visible | Preserve reader freshness while avoiding unused Sessions reads; scheduler/reader checks |
+| 5 | seconds | Periodic full selected content only while History is focused/visible | Preserve reader freshness while avoiding unused Sessions reads; scheduler/reader checks |
 | 10 | seconds | Compact all-session status while AI Session Hub has terminal focus | User chose reduced polling; twice the old interval, delayed readiness/opening observation; independent timer tests |
 | 60 | seconds | No user input before releasing both helpers and pausing all scans | User request: reduce idle CPU and runtime memory; keyboard/mouse/FocusIn reset, timer scans do not; scheduler and installed lifecycle checks |
 | 1 | second | Maximum idle event wait while unfocused or sleeping | Reduce wakeups; terminal FocusIn wakes immediately, signal/exit and PTY checks |
@@ -222,6 +237,7 @@ Failed scans are distinct from an empty list; prior results are marked stale.
 | 8 | response lines | Explicit request/blocker phrase search tail | Prioritize recent agent requests over older narrative; heuristic parser fixtures |
 | 250 | milliseconds | UUID confirmation window after selection | Observed asynchronous iTerm2 front-window update; 10 ms retry pause, no extra full scan or substituted target |
 | 150 | milliseconds | Selection debounce before content read | Avoid reading every intermediate session while navigating; no delay on Jump |
+| 3 | wrapped lines per preview | Maximum Details request/answer preview height; keep both visible | User narrow-terminal correction; bounded preview/ordering regression |
 | 100 | Unicode characters | Collapsed message preview | User requested message-by-message navigation; Unicode, reader and refresh tests |
 | 65,536 / 32 / 8,192 | characters / blocks / characters | Retained terminal history bounds | Bounded display work/memory; tail can omit older history; not full-conversation capture |
 | 5 | seconds | Helper reply deadline | Prevent a stuck API from blocking exit indefinitely; helper failure/reset handling |

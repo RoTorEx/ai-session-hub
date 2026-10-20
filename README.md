@@ -103,13 +103,14 @@ The regular interface shows numbers starting from one.
 | Enter in Sessions / o | Verify the link and jump to the existing pane |
 | e / Enter in History | Focus Content for scrolling; e returns to History |
 | t | Next color theme, applied and saved immediately |
+| i | Toggle Details / Session Info (technical data and sources) |
 | / | Search by agent, project, path and names |
 | Enter while searching | Apply the filter |
 | Esc while searching | Clear the filter and close search |
 | r | Refresh pane locations and content |
 | ? | Help |
 | q / Ctrl+C | Quit |
-| Esc | Close help/search; from history return to Sessions, otherwise quit |
+| Esc | Close help/search/info; from history return to Sessions, otherwise quit |
 
 The main letter keys also work in the Russian keyboard layout. In search, letters
 are entered as text. To clear an applied filter, press `/`, then Esc.
@@ -120,13 +121,19 @@ At startup this is **Sessions | Details**. **f** switches both panes to
 **History | Content** of the selected session; pressing **f** again returns to the session list.
 The minimum terminal size is 50×12; a narrow window keeps two columns.
 
-Groups show the folder name; identical names are distinguished by the parent folder.
-Full paths stay in Details. The table shows title, status, last update and last
-request; timings move to Details in narrow windows. Tab / Shift+Tab cycles status
-filters with counts. Details starts with model, reasoning, project and recent
-request/answer, followed by terminal metadata and identifiers. Sections use rules.
-Times below one hour use seconds/minutes; older events show date and Warsaw
-clock time (CET/CEST). A dash means unknown; ~ marks an observed change time.
+Groups show the folder name; the home-directory heading is omitted. Identical
+names are distinguished by the parent folder. Full paths stay in Details.
+The table always shows title, status and Updated, including in narrow windows.
+Titles end with an ellipsis and a gap before Status. Times omit `ago` and `~`.
+Below an hour they show seconds/minutes; narrow columns then use a Warsaw clock
+time for today or a date for older days. Details retains full date/time and zone.
+Tab / Shift+Tab cycles All, Needs you, Working, Idle and Unknown with counts.
+
+Details contains a concise overview, project, latest request and latest answer.
+Each request/answer preview has at most three wrapped lines (two in short windows); **f** opens the full
+retained history. Missing model/reasoning and times have explicit explanations.
+**i** opens a separate Session Info view with source limitations, terminal and
+process identifiers; **i / Esc** returns. Shortcuts stay in the footer/help.
 Model/reasoning and exact times come from a local provider file only when bound
 to the live process: an open Codex rollout or the Claude PID/start/session registry.
 Only the last 1 MiB is read per refresh; unavailable older fields remain unknown.
@@ -182,7 +189,9 @@ process check: new/closed agents are detected without constant full metadata
 collection. `metadata_seconds` is the window/tab and Git-root map; a new agent
 or `r` refreshes it earlier. `activity_seconds` is the compact status of all linked
 sessions (10 seconds by default). `content_seconds` is the full content of the selected
-pane, read only in History mode (5 seconds). The status scan does not
+pane, periodically read in History mode (5 seconds). Details reads it once after
+selection, refresh/focus return or a change to its compact request/answer, with
+no periodic full-content timer. The status scan does not
 reread the window map or Git roots. On entering History, reading starts right
 after a short 150 ms pause, without waiting for the full interval.
 
@@ -217,16 +226,16 @@ settings and comments. The CLI command applies the theme on the next launch; the
 | Symbol | Meaning |
 |---|---|
 | ● | The agent is working |
-| ○ | Idle — waiting for the next command |
+| ○ | Untracked — idle; earlier opening history is unknown |
 | ! | Approval required |
 | ? | A question or action for the user |
 | × | The agent reported a blocker |
-| ◆ | A new response is ready; the pane has not yet been observed opened |
-| ✓ | The pane was opened after the response became ready |
+| ◆ | New reply — a new response arrived; the pane has not been observed opened |
+| ✓ | Opened — the idle pane was observed open or opened by Jump; reading is unconfirmed |
 | · | Activity unknown |
 
 Questions and blockers are recognized from explicit phrases in the visible response; this is a heuristic.
-The request/response text is in History, the status explanation in Details, the legend in `?` help.
+Details previews the request/answer; History contains full retained text. The legend is in `?` help.
 A question/blocker stays marked after the pane is opened.
 
 AI Session Hub tracks opening of the exact active pane in the foreground iTerm2 or
@@ -246,8 +255,8 @@ The unfinished bottom prompt is excluded: it may be text not yet submitted.
 No Conversation ID is invented.
 
 Only the tail of the snapshot (65,536 characters) stays in memory, up to 32 blocks of 8192 characters each.
-By default a message shows its beginning (4 lines / 280 characters); `e` expands
-the retained part. This is not a full conversation archive. AI Session Hub does not store or
+Details previews at most three wrapped lines per request/answer; History selects
+iterations and Content displays their full retained text. This is not a full conversation archive. AI Session Hub does not store or
 send content anywhere; reading does not affect the safety of Jump identification.
 
 Local regular iTerm2 panes and interactive Codex/Claude are supported.

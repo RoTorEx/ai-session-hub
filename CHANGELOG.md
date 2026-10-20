@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Keep Updated visible in narrow terminals, separate columns and truncate Unicode titles cleanly; remove redundant request-time columns, `ago`, approximation prefixes and the home heading.
+- Distinguish New reply, Opened and Untracked opening history; record visits to initially idle panes and retain opening state when response markers disappear.
+- Reorder Details into overview/project/request/answer with bounded previews; move technical fields and data-source explanations to a separate Session Info view.
+- Read the selected visible screen once for Details and refresh it on selected text changes, recovering content above the compact status tail without periodic full reads outside History.
+
 ## [0.3.0] - 2026-10-20
 
 - Rename the product to AI Session Hub (`ai-session-hub`), including the GitHub repository, CLI, TUI, release assets, installation and configuration paths.

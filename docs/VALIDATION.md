@@ -359,3 +359,51 @@ renamed prerelease 0.2.5 binary successfully updated through the public latest U
 to 0.3.0 and matched that same payload. Updating the real installed 0.3.0 reported
 already up to date. Temporary verification files and generated build/package
 outputs were removed after these checks.
+
+
+## Narrow-terminal layout and Details correction — 2026-10-20
+
+User screenshots showed title/status concatenation, hidden update times in narrow
+windows, ambiguous Idle/Ready labels and a Details column dominated by missing
+metadata, embedded shortcuts and technical fields.
+
+Self-review traced the table width allocator, the opening state machine, compact
+24-row status samples, selected-pane content reads and provider-file binding.
+The nine live Codex processes inspected held no uniquely bound rollout JSONL.
+Consequently their provider model/reasoning/event times were genuinely unavailable
+through the supported binding; these fields were not populated from global
+settings, directory guesses, archive recency or another session.
+
+The table now retains Updated at supported narrow widths, separates columns and
+uses Unicode-aware ellipses. Compact time strings omit `ago` and `~`; same-day
+older events use a Warsaw clock and other days use a date, with full time/zone in
+Details. The home heading and request-time table column are omitted.
+
+Opening states are New reply, Opened and Untracked (idle with unknown opening
+history). Initial idle panes become Opened after a confirmed visit/Jump. Missing
+response markers alone do not erase an opening. The Idle filter replaces the
+misleading aggregate Ready label.
+
+Details shows a short overview, project, request and answer. Previews wrap at word
+boundaries and are bounded to three lines, or two in short windows. Session Info
+is a separate i/Esc view for sources and technical fields. Selected visible-screen
+reads recover content above the compact tail once per selection and on relevant
+changes, without a periodic Details reader. New provider requests are never
+paired with an old cached terminal answer. Missing metadata and content-read
+errors have explicit explanations.
+
+`make check` passed: formatting, clippy, 47 Rust tests, release build, shell syntax
+and isolated delivery/release checks. Focused regressions cover widths 50, 80,
+100, 120 and 160, Cyrillic/wide titles, column gaps, timestamp/day/DST behavior,
+opening transitions, bounded ordered previews, metadata above the compact tail,
+and one-shot Details versus periodic History reads.
+
+`make install-local` installed the checked build and preserved sunset settings.
+Installed bytes matched the checked build. Live TUI checks at 100×30 and 80×24
+showed Updated and both preview sections, recovered the selected session's
+request from above the compact tail, toggled Session Info with i/Esc, switched
+to History/Content and returned, then exited cleanly. No new Claude session or
+live Jump was performed; their unchanged binding/navigation boundaries remain
+covered by the existing checks. This is a local development build at 0.3.0;
+no new release tag or public release was created for this task. Generated build
+and package outputs were removed after verification.

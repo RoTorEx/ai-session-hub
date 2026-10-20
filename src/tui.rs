@@ -58,7 +58,7 @@ impl StatusFilter {
             Self::All => "All",
             Self::NeedsYou => "Needs you",
             Self::Working => "Working",
-            Self::Ready => "Ready",
+            Self::Ready => "Idle",
             Self::Unknown => "Unknown",
         }
     }
@@ -67,8 +67,8 @@ impl StatusFilter {
             Self::All => true,
             Self::NeedsYou => matches!(p.label(), "Approval" | "Question" | "Blocked"),
             Self::Working => p.label() == "Working",
-            Self::Ready => matches!(p.label(), "Idle" | "Ready" | "Opened"),
-            Self::Unknown => p.label() == "?",
+            Self::Ready => matches!(p.label(), "Untracked" | "New reply" | "Opened"),
+            Self::Unknown => p.state == activity::State::Unknown,
         }
     }
 }
@@ -122,6 +122,7 @@ pub struct App {
     history_area: Rect,
     detail_scroll: u16,
     help: bool,
+    technical: bool,
     history_view: bool,
     active: bool,
     sleeping: bool,
@@ -159,6 +160,7 @@ impl App {
             history_area: Rect::default(),
             detail_scroll: 0,
             help: false,
+            technical: false,
             history_view: false,
             active: true,
             sleeping: false,
@@ -303,7 +305,9 @@ impl App {
         }
         self.rows.clear();
         for (project, indexes) in groups {
-            self.rows.push(Row::Project(project));
+            if std::env::var("HOME").ok().as_deref() != Some(project.as_str()) {
+                self.rows.push(Row::Project(project));
+            }
             self.rows.extend(indexes.into_iter().map(Row::Session));
         }
         let selected = preferred
@@ -371,6 +375,17 @@ impl App {
                 p.requested_at = metadata.requested_at;
                 p.request = metadata.request.or(p.request.take());
                 p.last_message = metadata.last_message;
+            }
+        }
+        if !self.history_view
+            && let Some(id) = self.row_key()
+        {
+            let old = before.get(&id);
+            let new = self.activity.get(&id);
+            if old.map(|p| (&p.request, &p.last_message))
+                != new.map(|p| (&p.request, &p.last_message))
+            {
+                self.last_content = None;
             }
         }
         self.dirty |= self.activity != before;
@@ -562,7 +577,8 @@ fn poll_background(app: &mut App, worker: &Worker, config: &Config) {
     {
         app.force_refresh = false;
     }
-    if app.history_view
+    // Details gets one full visible-screen read per selection; History keeps refreshing.
+    if (app.history_view || app.last_content.is_none())
         && !app.content_pending
         && app.selected_since.elapsed() >= Duration::from_millis(150)
         && (app.force_content
@@ -859,12 +875,20 @@ fn key(k: KeyEvent, app: &mut App, worker: &Worker, theme: &mut Theme) -> bool {
     match k.code {
         KeyCode::Char('q' | 'й') => return true,
         KeyCode::Esc if app.history_view => switch_view(app, false),
+        KeyCode::Esc if app.technical => {
+            app.technical = false;
+            app.detail_scroll = 0;
+        }
         KeyCode::Esc => return true,
         KeyCode::Char('/') => {
             switch_view(app, false);
             app.editing = true;
         }
         KeyCode::Char('?') => app.help = true,
+        KeyCode::Char('i' | 'ш') if !app.history_view => {
+            app.technical = !app.technical;
+            app.detail_scroll = 0;
+        }
         KeyCode::Char('f' | 'F' | 'а' | 'А') => switch_view(app, !app.history_view),
         KeyCode::Tab | KeyCode::BackTab if !app.history_view => {
             let index = StatusFilter::ALL
@@ -969,11 +993,55 @@ fn separator(name: &str, width: u16, t: &Theme) -> Line<'static> {
         Style::default().fg(t.label),
     )
 }
+// Preview complete wrapped lines so long content cannot bury the next section.
+fn detail_preview(
+    lines: &mut Vec<Line<'static>>,
+    value: &str,
+    width: u16,
+    limit: usize,
+    t: &Theme,
+) {
+    let mut wrapped = Vec::new();
+    let mut current = String::new();
+    for word in safe_text(value).split_whitespace() {
+        let next = if current.is_empty() {
+            word.to_owned()
+        } else {
+            format!("{current} {word}")
+        };
+        if Span::raw(&next).width() <= width as usize {
+            current = next;
+            continue;
+        }
+        if !current.is_empty() {
+            wrapped.push(Line::raw(std::mem::take(&mut current)));
+        }
+        let mut parts = wrap_preview(word, width);
+        current = parts.pop().map(|l| l.to_string()).unwrap_or_default();
+        wrapped.extend(parts);
+    }
+    if !current.is_empty() {
+        wrapped.push(Line::raw(current));
+    }
+    let count = wrapped.len();
+    for (i, line) in wrapped.into_iter().take(limit).enumerate() {
+        let text = line.to_string();
+        let text = if i + 1 == limit && count > limit {
+            fit_cell(&format!("{text}…"), width as usize)
+                .trim_end()
+                .to_owned()
+        } else {
+            text
+        };
+        lines.push(Line::styled(text, Style::default().fg(t.task)));
+    }
+}
 fn details(app: &App, t: &Theme) -> Vec<Line<'static>> {
     let Some(s) = app.selected() else {
         return vec![Line::raw("Select a session to see its details")];
     };
     let width = app.details_area.width.saturating_sub(2);
+    let preview_lines = if app.details_area.height >= 28 { 3 } else { 2 };
     let progress = app.activity.get(&s.id).cloned().unwrap_or_default();
     let mut lines = vec![
         Line::styled(
@@ -986,100 +1054,158 @@ fn details(app: &App, t: &Theme) -> Vec<Line<'static>> {
             progress.label(),
             s.provider
         )),
-        Line::default(),
-        field(
-            "Model",
-            progress.model.clone().unwrap_or_else(|| "—".into()),
-            t,
-        ),
-        field(
-            "Reasoning",
-            progress.reasoning.clone().unwrap_or_else(|| "—".into()),
-            t,
-        ),
-        field(
-            "Updated",
-            progress_time(&progress, false, SystemTime::now()),
-            t,
-        ),
-        field(
-            "Last request",
-            progress_time(&progress, true, SystemTime::now()),
-            t,
-        ),
-        Line::default(),
-        separator("PROJECT", width, t),
-        Line::raw(safe_text(s.cwd.as_deref().unwrap_or(&s.project))),
-        Line::default(),
-        separator("LAST REQUEST", width, t),
     ];
-    lines.insert(
-        7,
-        Line::styled(
-            if progress.native_metadata {
-                "Times: Europe/Warsaw · provider events"
-            } else {
-                "Times: Europe/Warsaw · observed changes (~)"
-            },
-            Style::default().fg(t.label),
-        ),
-    );
-    body(
-        &mut lines,
-        progress
-            .request
-            .as_deref()
-            .unwrap_or("Not visible in the terminal snapshot"),
-        t,
-    );
-    lines.push(Line::default());
-    lines.push(Line::styled(
-        "f History · requests, answers and actions",
-        Style::default().fg(t.info),
-    ));
-    if let Some(message) = &progress.last_message {
+    if app.technical {
         lines.push(Line::default());
-        lines.push(separator("LAST MESSAGE", width, t));
-        body(&mut lines, message, t);
-    }
-    lines.push(Line::default());
-    lines.push(separator("ACTIVITY", width, t));
-    if let Some(progress) = app.activity.get(&s.id) {
-        lines.push(field("Activity", progress.explanation().into(), t));
-        lines.push(field("Response", progress.opening().into(), t));
-    }
-    lines.push(Line::default());
-    lines.push(separator("TERMINAL", width, t));
-    if let Some(p) = &s.location {
-        lines.push(field("Window", p.window.clone(), t));
-        lines.push(field("Tab", format!("{} · {}", p.tab_index + 1, p.tab), t));
+        lines.push(separator("DATA SOURCES", width, t));
+        body(
+            &mut lines,
+            if progress.native_metadata {
+                "Metadata: linked provider session. Missing fields may come from visible terminal text."
+            } else {
+                "Provider metadata is unavailable: no uniquely bound session file. Model, reasoning and event times may be absent. Visible terminal text is used when available."
+            },
+            t,
+        );
+        body(
+            &mut lines,
+            "Times use Europe/Warsaw (CET/CEST). Terminal change times are observations; provider times are conversation events. Opening a pane does not confirm reading.",
+            t,
+        );
+        lines.push(Line::default());
+        lines.push(separator("TERMINAL", width, t));
+        if let Some(p) = &s.location {
+            lines.push(field("Window", p.window.clone(), t));
+            lines.push(field("Tab", format!("{} · {}", p.tab_index + 1, p.tab), t));
+            lines.push(field(
+                "Pane",
+                format!("{} · {}", p.pane_index + 1, p.name),
+                t,
+            ));
+            lines.push(field("TTY", p.tty.clone(), t));
+            lines.push(field("Pane UUID", p.id.clone(), t));
+        } else {
+            lines.push(field(
+                "Jump unavailable",
+                s.link_reason.clone().unwrap_or_default(),
+                t,
+            ));
+        }
+        lines.push(Line::default());
+        lines.push(separator("PROCESS", width, t));
+        lines.push(field("PID", s.pid.to_string(), t));
+        lines.push(field("Process ID", s.id.clone(), t));
         lines.push(field(
-            "Pane",
-            format!("{} · {}", p.pane_index + 1, p.name),
+            "Folder",
+            s.cwd.clone().unwrap_or_else(|| "Unknown".into()),
             t,
         ));
-    } else {
-        lines.push(field(
-            "Jump unavailable",
-            s.link_reason.clone().unwrap_or_default(),
-            t,
+        if s.cwd.as_deref() != Some(&s.project) {
+            lines.push(field("Git root", s.project.clone(), t));
+        }
+        return lines;
+    }
+    if progress.label() == "Untracked" {
+        lines.push(Line::styled(
+            progress.explanation(),
+            Style::default().fg(t.label),
+        ));
+    } else if matches!(progress.label(), "Question" | "Blocked") {
+        lines.push(Line::styled(
+            progress.opening(),
+            Style::default().fg(t.label),
+        ));
+    }
+    let content = selected_content(app).and_then(|r| r.as_ref().ok());
+    let model = progress
+        .model
+        .as_deref()
+        .or_else(|| content.and_then(|c| c.model.as_deref()));
+    let reasoning = progress
+        .reasoning
+        .as_deref()
+        .or_else(|| content.and_then(|c| c.reasoning.as_deref()));
+    if let Some(model) = model {
+        lines.push(field("Model", model.into(), t));
+    }
+    if let Some(reasoning) = reasoning {
+        lines.push(field("Reasoning", reasoning.into(), t));
+    }
+    if model.is_none() && reasoning.is_none() {
+        lines.push(Line::styled(
+            "Model/reasoning not exposed",
+            Style::default().fg(t.label),
         ));
     }
     lines.push(field(
-        "Folder",
-        s.cwd.clone().unwrap_or_else(|| "Unknown".into()),
+        "Updated",
+        if progress.updated_at.is_some() {
+            progress_time(&progress, false, SystemTime::now())
+        } else {
+            "Time unavailable".into()
+        },
         t,
     ));
-    if s.cwd.as_deref() != Some(&s.project) {
-        lines.push(field("Git root", s.project.clone(), t));
+    if progress.requested_at.is_some() {
+        lines.push(field(
+            "Requested",
+            progress_time(&progress, true, SystemTime::now()),
+            t,
+        ));
+    }
+    lines.push(separator("PROJECT", width, t));
+    body(&mut lines, s.cwd.as_deref().unwrap_or(&s.project), t);
+    let visible_request = content.and_then(|c| {
+        c.messages
+            .iter()
+            .rev()
+            .find(|m| m.role == content::Role::You)
+            .map(|m| m.text.as_str())
+    });
+    let request = progress.request.as_deref().or(visible_request);
+    let answer = progress.last_message.as_deref().or_else(|| {
+        if progress.native_metadata
+            || (progress.request.is_some() && progress.request.as_deref() != visible_request)
+        {
+            return None;
+        }
+        content.and_then(|c| {
+            c.messages
+                .iter()
+                .rev()
+                .take_while(|m| m.role != content::Role::You)
+                .find(|m| m.role == content::Role::Agent)
+                .map(|m| m.text.as_str())
+        })
+    });
+    lines.push(Line::default());
+    lines.push(separator("LATEST REQUEST", width, t));
+    if let Some(request) = request {
+        detail_preview(&mut lines, request, width, preview_lines, t);
+    } else {
+        let unavailable = match selected_content(app) {
+            Some(Err(error)) => format!("Session content unavailable: {error}"),
+            _ if app.content_pending || app.last_content.is_none() => {
+                "Reading selected session…".into()
+            }
+            _ => "Request is outside the visible terminal screen.".into(),
+        };
+        body(&mut lines, &unavailable, t);
     }
     lines.push(Line::default());
-    lines.push(separator("IDENTITY", width, t));
-    lines.push(field("PID", s.pid.to_string(), t));
-    lines.push(field("Session ID", s.id.clone(), t));
-    if let Some(p) = &s.location {
-        lines.push(field("TTY", p.tty.clone(), t));
-        lines.push(field("Pane UUID", p.id.clone(), t));
+    lines.push(separator("LATEST ANSWER", width, t));
+    if let Some(answer) = answer {
+        detail_preview(&mut lines, answer, width, preview_lines, t);
+    } else {
+        body(
+            &mut lines,
+            if progress.state == activity::State::Working {
+                "Agent is working."
+            } else {
+                "No answer in the available session content."
+            },
+            t,
+        );
     }
     lines
 }
@@ -1090,12 +1216,7 @@ fn progress_time(progress: &Progress, request: bool, now: SystemTime) -> String 
     } else {
         progress.updated_at
     };
-    let value = event_time(time, now);
-    if time.is_some() && !progress.native_metadata {
-        format!("~{value}")
-    } else {
-        value
-    }
+    event_time(time, now)
 }
 
 fn event_time(value: Option<SystemTime>, now: SystemTime) -> String {
@@ -1104,10 +1225,10 @@ fn event_time(value: Option<SystemTime>, now: SystemTime) -> String {
     };
     let age = now.duration_since(value).unwrap_or_default().as_secs();
     if age < 60 {
-        return format!("{age}s ago");
+        return format!("{age}s");
     }
     if age < 3600 {
-        return format!("{}m ago", age / 60);
+        return format!("{}m", age / 60);
     }
     let date: chrono::DateTime<chrono::Utc> = value.into();
     date.with_timezone(&chrono_tz::Europe::Warsaw)
@@ -1137,14 +1258,25 @@ fn fit_cell(text: &str, width: usize) -> String {
     result
 }
 
-// Retain a useful title on narrow terminals, then add timing columns as space permits.
-fn session_columns(width: u16) -> (usize, usize, usize) {
-    match width {
-        95.. => (11, 20, 20),
-        72.. => (11, 18, 18),
-        52.. => (10, 0, 0),
-        36.. => (9, 0, 0),
-        _ => (0, 0, 0),
+// Always retain Updated; omit the redundant request-time column in the list.
+fn session_columns(width: u16) -> (usize, usize) {
+    (9, if width >= 85 { 19 } else { 7 })
+}
+fn table_time(progress: &Progress, now: SystemTime, width: usize) -> String {
+    let full = progress_time(progress, false, now);
+    if Span::raw(&full).width() <= width {
+        return full;
+    }
+    let Some(value) = progress.updated_at else {
+        return full;
+    };
+    let date: chrono::DateTime<chrono::Utc> = value.into();
+    let now: chrono::DateTime<chrono::Utc> = now.into();
+    let local = date.with_timezone(&chrono_tz::Europe::Warsaw);
+    if local.date_naive() == now.with_timezone(&chrono_tz::Europe::Warsaw).date_naive() {
+        local.format("%H:%M").to_string()
+    } else {
+        local.format("%d %b").to_string()
     }
 }
 fn compact_path_with_home(path: &str, home: Option<&str>) -> String {
@@ -1443,9 +1575,9 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
     };
     if !app.history_view {
         let selected = app.state.selected();
-        let row_width = app.list_area.width.saturating_sub(3);
-        let (status_w, update_w, request_w) = session_columns(row_width);
-        let name_w = (row_width as usize).saturating_sub(status_w + update_w + request_w);
+        let row_width = app.list_area.width.saturating_sub(2);
+        let (status_w, update_w) = session_columns(row_width);
+        let name_w = (row_width as usize).saturating_sub(status_w + update_w + 2);
         let now = SystemTime::now();
         let items: Vec<_> = app
             .rows
@@ -1463,23 +1595,21 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
                     let color = match progress.label() {
                         "Approval" | "Blocked" | "Question" => t.error,
                         "Working" => t.info,
-                        "Ready" => t.project,
+                        "New reply" => t.project,
                         _ => t.status,
                     };
                     let name = format!("{} {}", progress.symbol(), session_title(s));
                     let normal = Style::default().fg(if active { t.selected_fg } else { t.task });
                     ListItem::new(Line::from(vec![
                         Span::styled(fit_cell(&name, name_w), normal),
+                        Span::raw(" "),
                         Span::styled(
                             fit_cell(progress.label(), status_w),
                             Style::default().fg(if active { t.selected_fg } else { color }),
                         ),
+                        Span::raw(" "),
                         Span::styled(
-                            fit_cell(&progress_time(&progress, false, now), update_w),
-                            normal,
-                        ),
-                        Span::styled(
-                            fit_cell(&progress_time(&progress, true, now), request_w),
+                            fit_cell(&table_time(&progress, now, update_w), update_w),
                             normal,
                         ),
                     ]))
@@ -1493,11 +1623,10 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
             ..app.list_area
         };
         let header = format!(
-            "  {}{}{}{}",
+            "  {} {} {}",
             fit_cell("Tasks", name_w),
             fit_cell("Status", status_w),
-            fit_cell("Updated", update_w),
-            fit_cell("Request", request_w)
+            fit_cell("Updated", update_w)
         );
         f.render_widget(block.clone(), app.list_area);
         f.render_widget(
@@ -1534,7 +1663,11 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
         if app.history_view {
             "Content · Tab scroll"
         } else {
-            "Task Details"
+            if app.technical {
+                "Session Info"
+            } else {
+                "Details"
+            }
         },
         Focus::Reader,
         app,
@@ -1550,7 +1683,8 @@ fn draw(f: &mut Frame, app: &mut App, t: &Theme) {
         draw_history(f, app, t);
     }
     let context = match app.focus {
-        Focus::Sessions => "↑↓ select · Enter open · f history · Tab filter",
+        Focus::Sessions if area.width < 90 => "↑↓ · Enter open · f history · i info",
+        Focus::Sessions => "↑↓ select · Enter open · f history · i info",
         Focus::History => "↑↓ iteration · Tab scroll · o open",
         Focus::Reader => "↑↓ scroll · Tab history · o open",
     };
@@ -1608,9 +1742,11 @@ t: next theme (saved and applied immediately)
 /: search · r: refresh · q/Ctrl+C: exit
 PageUp/PageDown, Home/End: navigate the focused pane
 
-● Working · ○ Idle · ! Approval
+● Working · ○ Untracked opening · ! Approval
 ? Question/action · × Blocked
-◆ New response ready · ✓ Pane opened · · Unknown
+◆ New reply (not opened) · ✓ Opened · · Unknown
+Untracked: idle; opening history unknown. Idle filter includes Untracked, New reply and Opened.
+i: show session information and data sources; Esc returns to Details.
 Opening is not proof of reading. Tracking lasts while AI Session Hub is open.
 
 History is a visible terminal snapshot, not a complete archived chat.
@@ -1637,11 +1773,11 @@ mod tests {
         let summer = time("2026-10-20T09:00:00Z");
         assert_eq!(
             event_time(Some(summer), summer + Duration::from_secs(59)),
-            "59s ago"
+            "59s"
         );
         assert_eq!(
             event_time(Some(summer), summer + Duration::from_secs(3599)),
-            "59m ago"
+            "59m"
         );
         assert_eq!(
             event_time(Some(summer), summer + Duration::from_secs(3600)),
@@ -1651,6 +1787,20 @@ mod tests {
         assert_eq!(
             event_time(Some(winter), winter + Duration::from_secs(7200)),
             "21 Dec 00:30 CET"
+        );
+        let mut compact = Progress::default();
+        compact.updated_at = Some(summer);
+        assert_eq!(
+            table_time(&compact, summer + Duration::from_secs(3600), 7),
+            "11:00"
+        );
+        assert_eq!(
+            table_time(&compact, summer + Duration::from_secs(86_400), 7),
+            "20 Oct"
+        );
+        assert_eq!(
+            table_time(&compact, summer + Duration::from_secs(3600), 19),
+            "20 Oct 11:00 CEST"
         );
         assert_eq!(event_time(None, summer), "—");
         assert_eq!(fit_cell("界abcdef", 5), "界ab…");
@@ -1679,6 +1829,125 @@ mod tests {
         app.status_filter = StatusFilter::All;
         app.rebuild(None);
         assert!(app.row_key().is_some());
+    }
+
+    #[test]
+    fn narrow_rows_keep_update_and_separate_unicode_titles_from_status() {
+        let mut app = content_app();
+        app.sessions[0].location = Some(crate::iterm::Pane {
+            id: "pane".into(),
+            tty: "/dev/ttys001".into(),
+            root_pid: 1,
+            window_id: 1,
+            window: "Agents".into(),
+            tab: "Work".into(),
+            tab_index: 0,
+            pane_index: 0,
+            name: "界界 Очень длинное название задачи с кириллицей и продолжением".repeat(3),
+        });
+        let mut progress = Progress::default();
+        progress.state = activity::State::Idle;
+        progress.updated_at = Some(SystemTime::now() - Duration::from_secs(15));
+        app.activity.insert("a".into(), progress);
+        let t = crate::theme::get("sunset").unwrap();
+        for width in [50, 80, 100, 120, 160] {
+            let mut term =
+                ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, 30)).unwrap();
+            term.draw(|f| draw(f, &mut app, &t)).unwrap();
+            let rows = (app.list_area.y..app.list_area.bottom())
+                .map(|y| {
+                    (0..app.list_area.right())
+                        .map(|x| term.backend().buffer()[(x, y)].symbol())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>();
+            assert!(
+                rows.iter().any(|r| r.contains("Updated")),
+                "{width}: {rows:?}"
+            );
+            let row = rows.iter().find(|r| r.contains("Untracked")).unwrap();
+            assert!(row.contains("… Untracked "), "{width}: {row}");
+            assert!(row.contains("15s"), "{width}: {row}");
+            assert!(!row.contains("ago") && !row.contains('~'));
+        }
+    }
+
+    #[test]
+    fn full_visible_details_recover_request_and_model_above_compact_status_tail() {
+        let mut app = content_app();
+        app.details_area = Rect::new(65, 3, 35, 30);
+        let source = format!(
+            "Model: live-session-model\nReasoning: high\n› Submitted request above the status tail\n• Answer\n{}\n› draft\n70% context left",
+            "visible response line\n".repeat(30)
+        );
+        let compact = source
+            .lines()
+            .rev()
+            .take(24)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+            .join("\n");
+        let observation = activity::Observation::parse(&compact, crate::process::Provider::Codex);
+        assert!(observation.request.is_none() && observation.model.is_none());
+        app.set_content(Some((
+            "a".into(),
+            Ok(content::parse(&source, crate::process::Provider::Codex)),
+        )));
+        let t = crate::theme::get("sunset").unwrap();
+        let rendered = text(details(&app, &t));
+        assert!(rendered.contains("live-session-model") && rendered.contains("high"));
+        assert!(rendered.contains("Submitted request above"));
+        assert!(!rendered.contains("draft"));
+        let mut lines = Vec::new();
+        detail_preview(&mut lines, "first second third fourth fifth", 12, 2, &t);
+        let preview = text(lines);
+        assert!(preview.starts_with("first second\n"));
+        assert!(preview.ends_with('…') && !preview.ends_with("……"));
+    }
+
+    #[test]
+    fn details_preview_is_bounded_and_technical_information_has_its_own_view() {
+        let mut app = content_app();
+        app.details_area = Rect::new(65, 3, 35, 30);
+        let t = crate::theme::get("sunset").unwrap();
+        let rendered = text(details(&app, &t));
+        assert!(rendered.contains("User question only") && rendered.contains("Agent answer only"));
+        assert!(!rendered.contains("END_OF_REPLY"));
+        assert!(
+            !rendered.contains("TERMINAL")
+                && !rendered.contains("ACTIVITY")
+                && !rendered.contains("f History")
+        );
+        assert!(rendered.find("PROJECT").unwrap() < rendered.find("LATEST REQUEST").unwrap());
+        assert!(rendered.find("LATEST REQUEST").unwrap() < rendered.find("LATEST ANSWER").unwrap());
+        let worker = inert_worker();
+        let mut t = t;
+        key(
+            KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE),
+            &mut app,
+            &worker,
+            &mut t,
+        );
+        let info = text(details(&app, &t));
+        assert!(info.contains("DATA SOURCES") && info.contains("PROCESS"));
+        assert!(!info.contains("LATEST ANSWER"));
+        assert!(!key(
+            KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+            &mut app,
+            &worker,
+            &mut t
+        ));
+        assert!(!app.technical);
+        // A new provider request must not be paired with an old cached terminal answer.
+        let mut p = Progress::default();
+        p.native_metadata = true;
+        p.request = Some("New pending request".into());
+        app.activity.insert("a".into(), p);
+        let rendered = text(details(&app, &t));
+        assert!(rendered.contains("New pending request"));
+        assert!(!rendered.contains("Agent answer only"));
     }
 
     #[test]
@@ -1727,9 +1996,9 @@ mod tests {
             .join("\n");
         for expected in [
             "Updated",
-            "Request",
+            "Requested",
             "Working",
-            "15s ago",
+            "15s",
             "gpt-6.1-sol",
             "medium",
             "Keep the iteration history",
@@ -1829,7 +2098,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         assert!(sidebar.contains("◆"));
-        assert!(sidebar.contains("Ready"));
+        assert!(sidebar.contains("New reply"));
         app.reconcile(vec![
             session("b", "/alpha"),
             session("new-pid-start", "/alpha"),
@@ -1869,9 +2138,9 @@ mod tests {
             .collect::<String>();
         for expected in [
             &format!("AI Session Hub v{}", env!("CARGO_PKG_VERSION")),
-            "Model",
-            "Reasoning",
-            "TERMINAL",
+            "Model/reasoning not exposed",
+            "LATEST REQUEST",
+            "LATEST ANSWER",
         ] {
             assert!(text.contains(expected), "{expected}");
         }
@@ -1885,7 +2154,8 @@ mod tests {
         assert!(!text.contains("LATEST EXCHANGE"));
         assert!(!text.contains("Git root"));
         assert!(!text.contains("Pane UUID"));
-        assert!(!text.contains("Answer"));
+        assert!(text.contains("Answer"));
+        assert!(!text.contains("TERMINAL"));
         switch_view(&mut app, true);
         term.draw(|f| draw(f, &mut app, &t)).unwrap();
         let rendered = term
@@ -1918,6 +2188,7 @@ mod tests {
                     text: "long text\n".repeat(100),
                 }],
                 context: String::new(),
+                ..Default::default()
             }),
         ));
         app.history_view = true;
@@ -1967,6 +2238,7 @@ mod tests {
                     },
                 ],
                 context: String::new(),
+                ..Default::default()
             }),
         ));
         app
@@ -2009,6 +2281,12 @@ mod tests {
         app.last_scan = Some(Instant::now());
         app.last_activity = Some(Instant::now() - Duration::from_secs(6));
         app.selected_since = Instant::now() - Duration::from_secs(1);
+        // Details loads once, even before entering History.
+        poll_background(&mut app, &worker, &config);
+        assert!(matches!(requests.try_recv(), Ok(Request::Content(s)) if s.id == "a"));
+        assert!(requests.try_recv().is_err());
+        app.content_pending = false;
+        app.last_content = Some(Instant::now() - Duration::from_secs(6));
         poll_background(&mut app, &worker, &config);
         assert!(requests.try_recv().is_err());
         switch_view(&mut app, true);
@@ -2022,8 +2300,14 @@ mod tests {
         assert!(matches!(requests.try_recv(), Ok(Request::Activity(s)) if s.len() == 2));
         assert!(requests.try_recv().is_err());
         switch_view(&mut app, false);
-        app.last_content = None;
+        app.last_content = Some(Instant::now() - Duration::from_secs(6));
         poll_background(&mut app, &worker, &config);
+        assert!(requests.try_recv().is_err());
+        // A new selection invalidates the preview without creating a periodic reader.
+        app.move_selection(1);
+        app.selected_since = Instant::now() - Duration::from_secs(1);
+        poll_background(&mut app, &worker, &config);
+        assert!(matches!(requests.try_recv(), Ok(Request::Content(s)) if s.id == "b"));
         assert!(requests.try_recv().is_err());
     }
     #[test]
