@@ -9,6 +9,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
+name = "ai-session-hub"
+version = "0.3.2"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "chrono-tz",
+ "clap",
+ "crossterm",
+ "flate2",
+ "fs2",
+ "libc",
+ "ratatui",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "signal-hook",
+ "tar",
+ "toml",
+ "toml_edit",
+]
+
+[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -427,6 +450,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
 dependencies = [
  "percent-encoding",
+]
+
+[[package]]
+name = "fs2"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9564fc758e15025b46aa6643b1b77d047d1a56a1aea6e01002ac0c7026876213"
+dependencies = [
+ "libc",
+ "winapi",
 ]
 
 [[package]]
@@ -1406,28 +1439,6 @@ checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "ai-session-hub"
-version = "0.3.2"
-dependencies = [
- "anyhow",
- "chrono",
- "chrono-tz",
- "clap",
- "crossterm",
- "flate2",
- "libc",
- "ratatui",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "signal-hook",
- "tar",
- "toml",
- "toml_edit",
 ]
 
 [[package]]

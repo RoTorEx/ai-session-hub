@@ -614,6 +614,9 @@ impl Drop for TerminalGuard {
     }
 }
 pub fn run(config: Config, mut theme: Theme) -> Result<()> {
+    let operation = crate::usage::Operation::start("session_browser");
+    let mut scans = 0_u64;
+    let mut scan_errors = 0_u64;
     let terminate = Arc::new(AtomicBool::new(false));
     let mut signals = vec![];
     for sig in [signal_hook::consts::SIGTERM, signal_hook::consts::SIGINT] {
@@ -630,10 +633,26 @@ pub fn run(config: Config, mut theme: Theme) -> Result<()> {
             while let Ok(response) = worker.rx.try_recv() {
                 match response {
                     Response::Refreshed(Ok(s)) => {
+                        if scans == 0 {
+                            crate::usage::event(
+                                "browser_ready",
+                                "success",
+                                serde_json::json!({"count":s.len(),"linked":s.iter().filter(|x|x.location.is_some()).count()}),
+                            );
+                        }
+                        scans += 1;
                         app.busy = false;
                         app.reconcile(s);
                     }
                     Response::Refreshed(Err(e)) => {
+                        scan_errors += 1;
+                        if scan_errors == 1 {
+                            crate::usage::event(
+                                "discovery",
+                                "error",
+                                serde_json::json!({"error_code":"scan_failed"}),
+                            );
+                        }
                         app.busy = false;
                         let notice = format!("Refresh failed: {e}");
                         if notice != app.notice || !app.stale {
@@ -737,6 +756,10 @@ pub fn run(config: Config, mut theme: Theme) -> Result<()> {
     for id in signals {
         signal_hook::low_level::unregister(id);
     }
+    operation.finish(
+        if result.is_ok() { "success" } else { "error" },
+        serde_json::json!({"scans":scans,"scan_errors":scan_errors}),
+    );
     result
 }
 fn mouse(m: event::MouseEvent, app: &mut App) {
@@ -881,6 +904,7 @@ fn key(k: KeyEvent, app: &mut App, worker: &Worker, theme: &mut Theme) -> bool {
         }
         KeyCode::Esc => return true,
         KeyCode::Char('/') => {
+            crate::usage::event("session_search", "started", serde_json::json!({}));
             switch_view(app, false);
             app.editing = true;
         }
@@ -897,6 +921,11 @@ fn key(k: KeyEvent, app: &mut App, worker: &Worker, theme: &mut Theme) -> bool {
                 .unwrap_or(0);
             let offset = if k.code == KeyCode::BackTab { 4 } else { 1 };
             app.status_filter = StatusFilter::ALL[(index + offset) % 5];
+            crate::usage::event(
+                "status_filter",
+                "success",
+                serde_json::json!({"filter_index":(index+offset)%5}),
+            );
             let old = app.row_key();
             app.rebuild(old.clone());
             if app.row_key() != old {

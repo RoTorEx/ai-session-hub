@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Add bounded, metadata-only local product usage evidence; preserve business and recovery state.
+
 ## [Unreleased]
 
 ## [0.3.2] - 2026-10-28

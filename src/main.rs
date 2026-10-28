@@ -1,6 +1,8 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::io::IsTerminal;
+mod usage;
+use serde_json::json;
 mod activity;
 mod benchmark;
 mod command;
@@ -57,8 +59,7 @@ enum Action {
     },
 }
 
-fn run() -> Result<()> {
-    let args = Args::parse();
+fn run(args: Args) -> Result<()> {
     let action = match args.command {
         Some(a) => a,
         None if args.plain => Action::List { json: false },
@@ -74,6 +75,11 @@ fn run() -> Result<()> {
             return Ok(());
         }
     };
+    usage::event(
+        "command_selected",
+        "started",
+        json!({"mode":match &action {Action::Benchmark{..}=>"benchmark",Action::Version=>"version",Action::Update=>"update",Action::SetupConfig=>"setup",Action::Theme{..}=>"theme",Action::Themes=>"themes",Action::List{..}=>"list",Action::Jump{..}=>"jump"}}),
+    );
     match action {
         Action::Benchmark { samples, jump } => benchmark::run(samples, jump.as_deref())?,
         Action::Version => println!("ai-session-hub {}", env!("CARGO_PKG_VERSION")),
@@ -88,6 +94,11 @@ fn run() -> Result<()> {
         }
         Action::List { json } => {
             let sessions = model::collect()?;
+            usage::event(
+                "sessions_listed",
+                "success",
+                json!({"count":sessions.len(),"linked":sessions.iter().filter(|s|s.location.is_some()).count()}),
+            );
             if json {
                 println!("{}", serde_json::to_string_pretty(&sessions)?);
             } else {
@@ -131,7 +142,27 @@ fn run() -> Result<()> {
     Ok(())
 }
 fn main() {
-    if let Err(e) = run() {
+    if let Ok(path) = config::path() {
+        usage::init(
+            "ai-session-hub",
+            path.with_file_name("logs").join("events.jsonl"),
+        );
+    }
+    let args = match Args::try_parse() {
+        Ok(args) => args,
+        Err(e) => {
+            usage::event(
+                "cli_parse",
+                if e.use_stderr() { "error" } else { "no_op" },
+                json!({}),
+            );
+            e.exit()
+        }
+    };
+    let operation = usage::Operation::start("command");
+    let result = run(args);
+    operation.finish(if result.is_ok() { "success" } else { "error" }, json!({}));
+    if let Err(e) = result {
         eprintln!("ai-session-hub: {e:#}");
         std::process::exit(1);
     }

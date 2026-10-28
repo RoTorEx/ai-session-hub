@@ -318,3 +318,8 @@ data are not affected.
 
 Product rules: BUSINESS.md; local agent instructions: AGENTS.md;
 stage order: ROADMAP.md. Checks are performed personally, without subagents.
+
+## Local usage logs
+
+See [usage logging](docs/usage-logging.md) for product events, privacy, paths,
+rotation and interpretation limits.
