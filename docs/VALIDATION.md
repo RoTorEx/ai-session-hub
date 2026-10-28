@@ -19,7 +19,7 @@ No terminal text was read or written. Test sessions belong to the user.
 
 ## Initial installed build — 2026-10-09
 
-Local 0.0.0 installed at ~/.x-cli-fleet-scope/bin/fleet-scope. Real split-pane
+Local 0.0.0 installed at ~/.toolbelt/fleet-scope/bin/fleet-scope. Real split-pane
 Claude awaiting workspace-trust approval was detected as pane 2 and Jump read
 back that exact UUID; no approval was submitted to Claude. Original Codex pane
 was selected afterward.
@@ -176,7 +176,7 @@ Sova settings precedence and explicit config overrides. Smoke-install passed.
 
 Downloaded the three [published v0.2.0 assets](https://github.com/RoTorEx/ai-session-hub/releases/tag/v0.2.0).
 Verified the archive checksum and exact four regular-file entries. Installed
-through the published installer into ~/.x-cli-sova/bin/sova; installed bytes
+through the published installer into ~/.toolbelt/sova/bin/sova; installed bytes
 match the published payload. --version, -V and version all report sova 0.2.0.
 An isolated pre-release Sova 0.1.2 updated itself to published 0.2.0 through the
 new repository URL; installed update then reported Already up to date. Updated
@@ -193,7 +193,7 @@ directories and only the old managed PATH block. The unrelated shell profile
 bytes were preserved. A fresh interactive zsh resolved the new installed sova,
 reported 0.2.0, and could no longer resolve fleet-scope.
 
-Moved the source directory to ~/Documents/WorkSpace/Development/personal/cli/sova
+Moved the source directory to ~/Documents/WorkSpace/Development/personal/tools/sova
 and verified the working tree and canonical origin at the new path. Historical
 Desktop input archives and prior release payloads were preserved.
 The installed `sova list --json` subsequently returned eight live sessions, all
@@ -283,7 +283,7 @@ The installed binary detected twelve live sessions linked to iTerm2. A separate
 controlling PTY verified real Claude model/reasoning and the last-request date,
 History/Content transitions, keyboard scrolling, filter cycling, help, resize to
 50×12 and q exit with code 0. No agent received input and no Jump was induced.
-A fresh shell resolved ~/.x-cli-sova/bin/sova. Installed bytes were compared with
+A fresh shell resolved ~/.toolbelt/sova/bin/sova. Installed bytes were compared with
 the checked release build. Existing user agents and terminal names were preserved.
 
 Current Codex clients use a shared app-server and hold no per-thread rollout file.
@@ -318,11 +318,11 @@ Published-asset installation and real self-update passed as recorded below.
 Prepared `v0.3.0` with the interactive `make release` workflow and pushed main
 and its annotated tag using `make release-push`. Both release checks passed.
 The checkout moved to
-`~/Documents/WorkSpace/Development/personal/cli/ai-session-hub` without replacing
+`~/Documents/WorkSpace/Development/personal/tools/ai-session-hub` without replacing
 its Git history or working tree.
 
 Installed the built 0.3.0 archive at
-`~/.x-cli-ai-session-hub/bin/ai-session-hub`. The installed bytes matched the
+`~/.toolbelt/ai-session-hub/bin/ai-session-hub`. The installed bytes matched the
 built payload; settings were copied byte-for-byte from `~/.config/sova` to
 `~/.config/ai-session-hub`, leaving the source intact. A fresh interactive zsh
 resolved the new CLI and reported 0.3.0; the superseded Sova binary and its exact

@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
-install_dir="${AI_SESSION_HUB_INSTALL_DIR:-$HOME/.x-cli-ai-session-hub}"
+install_dir="${AI_SESSION_HUB_INSTALL_DIR:-$HOME/.toolbelt/ai-session-hub}"
 config_file="${AI_SESSION_HUB_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/ai-session-hub/config.toml}"
 version=latest
 archive_path=""

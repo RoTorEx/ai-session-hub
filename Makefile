@@ -2,7 +2,7 @@
 
 CARGO_TARGET_DIR ?= $(HOME)/construction_side/ai-session-hub/target
 DIST_DIR ?= $(HOME)/construction_side/ai-session-hub/dist
-INSTALL_DIR ?= $(HOME)/.x-cli-ai-session-hub
+INSTALL_DIR ?= $(HOME)/.toolbelt/ai-session-hub
 export CARGO_TARGET_DIR
 
 build:

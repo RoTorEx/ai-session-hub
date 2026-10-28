@@ -83,7 +83,7 @@ make bench
 ai-session-hub benchmark --samples 20
 # Only if you actually intend to select an existing pane:
 ai-session-hub benchmark --samples 20 --jump SESSION_ID
-python3 scripts/benchmark-intervals.py --binary ~/.x-cli-ai-session-hub/bin/ai-session-hub --seconds 15
+python3 scripts/benchmark-intervals.py --binary ~/.toolbelt/ai-session-hub/bin/ai-session-hub --seconds 15
 ```
 
 The interval script closes only its own TUI/helper processes and temporary configs.
@@ -143,9 +143,9 @@ On FocusIn (`ESC [ I`) refresh requests resume immediately.
 Physical memory and rare wakeups remain, so this is not zero cost.
 
 ```sh
-python3 scripts/benchmark-intervals.py --binary ~/.x-cli-ai-session-hub/bin/ai-session-hub --seconds 20 --profile 2/5/30 --view sessions
-python3 scripts/benchmark-intervals.py --binary ~/.x-cli-ai-session-hub/bin/ai-session-hub --seconds 20 --profile 2/5/30 --view history
-python3 scripts/benchmark-intervals.py --binary ~/.x-cli-ai-session-hub/bin/ai-session-hub --seconds 20 --profile 2/5/30 --view paused
+python3 scripts/benchmark-intervals.py --binary ~/.toolbelt/ai-session-hub/bin/ai-session-hub --seconds 20 --profile 2/5/30 --view sessions
+python3 scripts/benchmark-intervals.py --binary ~/.toolbelt/ai-session-hub/bin/ai-session-hub --seconds 20 --profile 2/5/30 --view history
+python3 scripts/benchmark-intervals.py --binary ~/.toolbelt/ai-session-hub/bin/ai-session-hub --seconds 20 --profile 2/5/30 --view paused
 ```
 
 `--activity-seconds` sets the independent status interval (10 by default).
@@ -173,7 +173,7 @@ measured separately in this check.
 To repeat the resource measurement after a real idle timeout:
 
 ```sh
-python3 scripts/benchmark-intervals.py --binary ~/.x-cli-ai-session-hub/bin/ai-session-hub --seconds 20 --profile 2/5/30 --view idle
+python3 scripts/benchmark-intervals.py --binary ~/.toolbelt/ai-session-hub/bin/ai-session-hub --seconds 20 --profile 2/5/30 --view idle
 ```
 
 The idle mode waits for the real timeout, verifies that the helpers disappear and then
