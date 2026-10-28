@@ -15,11 +15,11 @@ make install-local
 ai-session-hub
 ```
 
-The binary is installed to `~/.x-cli-ai-session-hub/bin/ai-session-hub`; the installer adds a
+The binary is installed to `~/.toolbelt/ai-session-hub/bin/ai-session-hub`; the installer adds a
 managed PATH block to `.zshrc` or `.bashrc`. In an already open shell:
 
 ```sh
-export PATH="$HOME/.x-cli-ai-session-hub/bin:$PATH"
+export PATH="$HOME/.toolbelt/ai-session-hub/bin:$PATH"
 ai-session-hub --version
 ```
 
@@ -56,7 +56,7 @@ variables with `AI_SESSION_HUB_CONFIG` / `AI_SESSION_HUB_INSTALL_DIR` as needed.
 Source configurations remain untouched.
 
 After checking `ai-session-hub --version` and your settings, remove the old
-`~/.x-cli-sova/bin/sova` binary and its managed `# x-cli-sova` …
+`~/.toolbelt/sova/bin/sova` binary and its managed `# x-cli-sova` …
 `# /x-cli-sova` shell profile block (or the corresponding FleetScope paths).
 Open a new terminal or add the new PATH as shown above. Existing running views
 keep the old name until restarted. Repository history, tags and earlier release
@@ -173,7 +173,7 @@ After exit AI Session Hub monitors nothing.
 ## Settings and themes
 
 Config: `$XDG_CONFIG_HOME/ai-session-hub/config.toml` or
-`~/.config/ai-session-hub/config.toml`. `AI_SESSION_HUB_CONFIG` overrides the path.
+`~/.toolbelt/ai-session-hub/config.toml`. `AI_SESSION_HUB_CONFIG` overrides the path.
 A missing file does not prevent startup: built-in values are used.
 
 ```toml
@@ -311,7 +311,7 @@ do not depend on them. A rebuild recreates them.
 
 ## Uninstallation
 
-Remove `~/.x-cli-ai-session-hub` and the managed block between `# x-cli-ai-session-hub`
+Remove `~/.toolbelt/ai-session-hub` and the managed block between `# x-cli-ai-session-hub`
 and `# /x-cli-ai-session-hub` from the shell profile. If needed, separately remove
 the selected config and `~/construction_side/ai-session-hub`. Agent processes and their
 data are not affected.

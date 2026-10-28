@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Toolbelt migration: use `~/.toolbelt/<name>` for custom installations and update project-path references where applicable.
+
 ## [0.3.1] - 2026-10-20
 
 - Keep Updated visible in narrow terminals, separate columns and truncate Unicode titles cleanly; remove redundant request-time columns, `ago`, approximation prefixes and the home heading.

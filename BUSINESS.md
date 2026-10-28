@@ -8,8 +8,8 @@ resumes, stops, or changes agent processes.
 ## Name and migration
 
 The product is AI Session Hub, executable/package/repository `ai-session-hub`, starting with minor
-0.3.0. Default installation is `~/.x-cli-ai-session-hub/bin/ai-session-hub`, configuration is
-`$XDG_CONFIG_HOME/ai-session-hub/config.toml` (otherwise `~/.config/ai-session-hub/config.toml`),
+0.3.0. Default installation is `~/.toolbelt/ai-session-hub/bin/ai-session-hub`, configuration is
+`$XDG_CONFIG_HOME/ai-session-hub/config.toml` (otherwise `~/.toolbelt/ai-session-hub/config.toml`),
 overrides are `AI_SESSION_HUB_INSTALL_DIR` and `AI_SESSION_HUB_CONFIG`. Earlier Sova and FleetScope tags and
 release payloads retain their original identities. The renamed installer copies
 Sova default configuration (then FleetScope as a fallback) only when the new default is absent and no explicit
@@ -250,7 +250,7 @@ CPU cost, with manual refresh and independently configurable timers.
 Commands follow neighbors: help, version, update, setup-config, themes/theme.
 Themes: calm (default), classic, forest, sunset, ocean, midnight; independent calm
 palette plus optional gtd color families. XDG config and AI_SESSION_HUB_CONFIG override. Install/update
-preserve configuration. Binary: ~/.x-cli-ai-session-hub/bin. Build cache:
+preserve configuration. Binary: ~/.toolbelt/ai-session-hub/bin. Build cache:
 ~/construction_side/ai-session-hub. Public release: RoTorEx/ai-session-hub, Apple Silicon
 macOS only. Release preparation/push are separate; real release needs approval.
 
