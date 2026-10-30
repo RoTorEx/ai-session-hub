@@ -173,7 +173,7 @@ After exit AI Session Hub monitors nothing.
 ## Settings and themes
 
 Config: `$XDG_CONFIG_HOME/ai-session-hub/config.toml` or
-`~/.config/ai-session-hub/config.toml`. `AI_SESSION_HUB_CONFIG` overrides the path.
+`~/.toolbelt/ai-session-hub/config.toml`. `AI_SESSION_HUB_CONFIG` overrides the path.
 A missing file does not prevent startup: built-in values are used.
 
 ```toml
@@ -318,3 +318,8 @@ data are not affected.
 
 Product rules: BUSINESS.md; local agent instructions: AGENTS.md;
 stage order: ROADMAP.md. Checks are performed personally, without subagents.
+
+## Local usage logs
+
+See [usage logging](docs/usage-logging.md) for product events, privacy, paths,
+rotation and interpretation limits.

@@ -181,7 +181,20 @@ pub fn validate(selected: &Session) -> Result<&Pane> {
 }
 
 pub fn jump_with(selected: &Session, terminal: &mut iterm::Client) -> Result<()> {
-    terminal.jump(validate(selected)?)
+    let operation = crate::usage::Operation::start("session_jump");
+    let pane = match validate(selected) {
+        Ok(p) => p,
+        Err(e) => {
+            operation.finish("blocked",serde_json::json!({"error_code":if selected.location.is_none() {"unlinked"} else {"identity_changed"}}));
+            return Err(e);
+        }
+    };
+    let result = terminal.jump(pane);
+    operation.finish(
+        if result.is_ok() { "success" } else { "error" },
+        serde_json::json!({"stage":"pane_verified","provider":selected.provider.to_string()}),
+    );
+    result
 }
 
 pub(crate) fn valid_identity(selected: &Session, pane: &Pane, table: &[Process]) -> bool {

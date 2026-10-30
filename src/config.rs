@@ -32,7 +32,7 @@ pub fn path() -> Result<PathBuf> {
     }
     let root = env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
-        .or_else(|| env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
+        .or_else(|| env::var_os("HOME").map(|h| PathBuf::from(h).join(".toolbelt")))
         .context("Set HOME or AI_SESSION_HUB_CONFIG")?;
     Ok(root.join("ai-session-hub/config.toml"))
 }

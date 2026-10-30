@@ -9,7 +9,7 @@ resumes, stops, or changes agent processes.
 
 The product is AI Session Hub, executable/package/repository `ai-session-hub`, starting with minor
 0.3.0. Default installation is `~/.toolbelt/ai-session-hub/bin/ai-session-hub`, configuration is
-`$XDG_CONFIG_HOME/ai-session-hub/config.toml` (otherwise `~/.config/ai-session-hub/config.toml`),
+`$XDG_CONFIG_HOME/ai-session-hub/config.toml` (otherwise `~/.toolbelt/ai-session-hub/config.toml`),
 overrides are `AI_SESSION_HUB_INSTALL_DIR` and `AI_SESSION_HUB_CONFIG`. Earlier Sova and FleetScope tags and
 release payloads retain their original identities. The renamed installer copies
 Sova default configuration (then FleetScope as a fallback) only when the new default is absent and no explicit
@@ -267,3 +267,10 @@ cached inventory/grouping; content owns observed terminal state/text; session_da
 provider metadata; tui owns
 navigation/presentation and timers. CLI/TUI share Jump. benchmark owns explicit
 local diagnostics. Delivery belongs to installer/updater/release scripts.
+
+## Local product usage evidence
+
+Record meaningful workflow outcomes locally, with bounded storage and no source
+content. [Usage logging](docs/usage-logging.md) owns the event and retention
+contract. Successful API calls, prepared artifacts and user-reported outcomes
+must not be presented as broader business success.

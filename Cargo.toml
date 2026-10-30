@@ -1,12 +1,13 @@
 [package]
 name = "ai-session-hub"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2024"
 description = "Find live Codex and Claude sessions and jump to their iTerm2 panes"
 license = "MIT"
 repository = "https://github.com/RoTorEx/ai-session-hub"
 
 [dependencies]
+fs2 = "0.4"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 libc = "0.2"
