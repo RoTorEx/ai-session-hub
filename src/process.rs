@@ -8,6 +8,10 @@ use std::path::{Path, PathBuf};
 pub enum Provider {
     Codex,
     Claude,
+    Kimi,
+    Qwen,
+    Gemini,
+    Grok,
 }
 
 impl std::fmt::Display for Provider {
@@ -15,6 +19,10 @@ impl std::fmt::Display for Provider {
         f.write_str(match self {
             Self::Codex => "Codex",
             Self::Claude => "Claude",
+            Self::Kimi => "Kimi",
+            Self::Qwen => "Qwen",
+            Self::Gemini => "Gemini",
+            Self::Grok => "Grok",
         })
     }
 }
@@ -31,6 +39,40 @@ pub struct Process {
     pub launcher: bool,
 }
 
+fn named_provider(name: &str) -> Option<Provider> {
+    match name {
+        "codex" => Some(Provider::Codex),
+        "claude" => Some(Provider::Claude),
+        "kimi" | "kimi-code" => Some(Provider::Kimi),
+        "qwen" | "qwen-code" => Some(Provider::Qwen),
+        "gemini" => Some(Provider::Gemini),
+        "grok" => Some(Provider::Grok),
+        _ => None,
+    }
+}
+
+fn script_provider(path: &str) -> Option<Provider> {
+    if !Path::new(path).is_absolute() {
+        return None;
+    }
+    [
+        ("/@openai/codex/", Provider::Codex),
+        ("/@anthropic-ai/claude-code/", Provider::Claude),
+        ("/@moonshot-ai/kimi-code/", Provider::Kimi),
+        ("/@qwen-code/qwen-code/", Provider::Qwen),
+        ("/@google/gemini-cli/", Provider::Gemini),
+        ("/@vibe-kit/grok-cli/", Provider::Grok),
+    ]
+    .into_iter()
+    .find_map(|(package, provider)| path.contains(package).then_some(provider))
+    .or_else(|| {
+        Path::new(path)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .and_then(named_provider)
+    })
+}
+
 fn classify(executable: &str, args: &[String]) -> Option<Provider> {
     let name = Path::new(executable).file_name()?.to_str()?;
     let argv0 = args
@@ -38,30 +80,23 @@ fn classify(executable: &str, args: &[String]) -> Option<Provider> {
         .and_then(|s| Path::new(s).file_name())
         .and_then(|s| s.to_str())
         .unwrap_or("");
-    let provider = if name == "codex" || argv0 == "codex" {
-        Provider::Codex
-    } else if name == "claude"
-        || argv0 == "claude"
-        || executable.contains("/.local/share/claude/versions/")
-    {
-        Provider::Claude
-    } else if name == "node"
-        && args.get(1).is_some_and(|s| {
-            s.contains("/@anthropic-ai/claude-code/") || s.contains("/@openai/codex/")
+    let runtime =
+        matches!(name, "node" | "bun" | "python" | "python3") || name.starts_with("python3.");
+    let script = runtime
+        .then(|| args.get(1).and_then(|s| script_provider(s)))
+        .flatten();
+    let provider = named_provider(name)
+        .or_else(|| {
+            executable
+                .contains("/.local/share/claude/versions/")
+                .then_some(Provider::Claude)
         })
-    {
-        if args[1].contains("claude-code") {
-            Provider::Claude
-        } else {
-            Provider::Codex
-        }
-    } else {
-        return None;
-    };
-    let offset = if name == "node" { 2 } else { 1 };
+        .or(script)
+        // Some CLIs replace Node's argv with their process title, losing the script argument.
+        .or_else(|| runtime.then(|| named_provider(argv0)).flatten())?;
+    let offset = if script.is_some() { 2 } else { 1 };
     let tail = args.get(offset..).unwrap_or_default();
-    // Only launch-mode tokens are inspected; argv/environment never leave discovery.
-    let blocked = match provider {
+    let blocked: &[&str] = match provider {
         Provider::Codex => &[
             "exec",
             "e",
@@ -74,18 +109,8 @@ fn classify(executable: &str, args: &[String]) -> Option<Provider> {
             "completion",
             "debug",
             "apply",
-            "--help",
-            "-h",
-            "--version",
-            "-V",
-        ][..],
+        ],
         Provider::Claude => &[
-            "--print",
-            "-p",
-            "--help",
-            "-h",
-            "--version",
-            "-v",
             "mcp",
             "update",
             "install",
@@ -106,11 +131,27 @@ fn classify(executable: &str, args: &[String]) -> Option<Provider> {
             "import",
             "upgrade",
             "auto-mode",
-            "--bg",
-            "--background",
-            "--desktop",
-            "--cloud",
-        ][..],
+        ],
+        _ => &[
+            "login",
+            "logout",
+            "auth",
+            "acp",
+            "web",
+            "server",
+            "serve",
+            "mcp",
+            "export",
+            "provider",
+            "doctor",
+            "vis",
+            "migrate",
+            "upgrade",
+            "update",
+            "completion",
+            "extensions",
+            "plugins",
+        ],
     };
     let mut i = 0;
     let mut first_positional = true;
@@ -120,14 +161,24 @@ fn classify(executable: &str, args: &[String]) -> Option<Provider> {
             break;
         }
         if arg.starts_with('-') {
-            if blocked.contains(&arg.as_str())
+            if matches!(arg.as_str(), "--help" | "-h" | "--version" | "-V")
                 || (provider == Provider::Claude
-                    && (arg.starts_with("--print=") || (arg.starts_with("-p") && arg.len() > 2)))
+                    && matches!(
+                        arg.as_str(),
+                        "-v" | "--bg" | "--background" | "--desktop" | "--cloud"
+                    ))
+                || (provider != Provider::Codex
+                    && (matches!(
+                        arg.as_str(),
+                        "--print" | "--prompt" | "--headless" | "--acp" | "--wire" | "-p"
+                    ) || arg.starts_with("--print=")
+                        || arg.starts_with("--prompt=")
+                        || (arg.starts_with("-p") && !arg.starts_with("--") && arg.len() > 2)))
             {
                 return None;
             }
-            let takes_value = match provider {
-                Provider::Codex => &[
+            let values: &[&str] = if provider == Provider::Codex {
+                &[
                     "-m",
                     "--model",
                     "-c",
@@ -143,12 +194,14 @@ fn classify(executable: &str, args: &[String]) -> Option<Provider> {
                     "-i",
                     "--image",
                     "--add-dir",
-                ][..],
-                Provider::Claude => &[
+                ]
+            } else {
+                &[
                     "-m",
                     "--model",
                     "--agent",
                     "--agents",
+                    "--agent-file",
                     "--debug-file",
                     "--effort",
                     "--input-format",
@@ -165,9 +218,13 @@ fn classify(executable: &str, args: &[String]) -> Option<Provider> {
                     "--settings",
                     "--allowedTools",
                     "--disallowedTools",
-                ][..],
+                    "--skills-dir",
+                    "--add-dir",
+                    "--prompt-interactive",
+                    "-i",
+                ]
             };
-            if takes_value.contains(&arg.as_str()) {
+            if values.contains(&arg.as_str()) {
                 i += 1;
             }
         } else {
@@ -179,6 +236,14 @@ fn classify(executable: &str, args: &[String]) -> Option<Provider> {
         i += 1;
     }
     Some(provider)
+}
+
+/// Use the kernel's launch executable only when an update unlinked the running image.
+/// Permission errors must not be disguised as a successful executable lookup.
+fn executable_path(live: Option<&str>, error: i32, launch: &str) -> Option<String> {
+    live.map(str::to_owned).or_else(|| {
+        (error == libc::ENOENT && Path::new(launch).is_absolute()).then(|| launch.to_owned())
+    })
 }
 
 pub fn agents(table: &[Process]) -> Vec<Process> {
@@ -257,7 +322,7 @@ pub fn scan() -> Result<Vec<Process>> {
             .collect();
         String::from_utf8_lossy(&data).into_owned()
     }
-    fn argv(pid: i32) -> Option<Vec<String>> {
+    fn argv(pid: i32) -> Option<(String, Vec<String>)> {
         let mut mib = [libc::CTL_KERN, libc::KERN_PROCARGS2, pid];
         let mut len = 0;
         if unsafe {
@@ -270,7 +335,7 @@ pub fn scan() -> Result<Vec<Process>> {
                 0,
             )
         } != 0
-            || len < 4
+            || !(4..=1_048_576).contains(&len)
         {
             return None;
         }
@@ -297,6 +362,7 @@ pub fn scan() -> Result<Vec<Process>> {
         while *bytes.get(pos)? != 0 {
             pos += 1;
         }
+        let launch = String::from_utf8_lossy(&bytes[4..pos]).into_owned();
         while bytes.get(pos) == Some(&0) {
             pos += 1;
         }
@@ -306,7 +372,7 @@ pub fn scan() -> Result<Vec<Process>> {
             args.push(String::from_utf8_lossy(&bytes[pos..end]).into_owned());
             pos = end + 1;
         }
-        Some(args)
+        Some((launch, args))
     }
     #[repr(C)]
     struct FileInfo {
@@ -361,13 +427,19 @@ pub fn scan() -> Result<Vec<Process>> {
             let mut path = [0i8; 4096];
             let len =
                 unsafe { libc::proc_pidpath(pid, path.as_mut_ptr().cast(), path.len() as u32) };
-            if len > 0
-                && let Some(args) = argv(pid)
-            {
-                p.provider = classify(&c_text(&path), &args);
-                p.launcher = Path::new(&c_text(&path))
-                    .file_name()
-                    .is_some_and(|s| s == "node");
+            let error = if len > 0 {
+                0
+            } else {
+                std::io::Error::last_os_error().raw_os_error().unwrap_or(0)
+            };
+            if let Some((launch, args)) = argv(pid) {
+                let live = (len > 0).then(|| c_text(&path));
+                if let Some(executable) = executable_path(live.as_deref(), error, &launch) {
+                    p.provider = classify(&executable, &args);
+                    p.launcher = Path::new(&executable)
+                        .file_name()
+                        .is_some_and(|s| s == "node" || s == "bun");
+                }
             }
             if p.provider.is_some() {
                 let mut fd: FdPath = unsafe { zeroed() };
@@ -422,6 +494,95 @@ mod tests {
             launcher: false,
         }
     }
+    #[test]
+    fn unlinked_images_use_only_kernel_launch_paths_and_only_for_enoent() {
+        for path in [
+            "/old/codex",
+            "/old/.local/share/claude/versions/1.2.3",
+            "/old/node",
+            "/old/kimi",
+        ] {
+            assert_eq!(
+                executable_path(None, libc::ENOENT, path).as_deref(),
+                Some(path)
+            );
+            assert_eq!(executable_path(None, libc::EPERM, path), None);
+            assert_eq!(executable_path(None, libc::EACCES, path), None);
+        }
+        assert_eq!(executable_path(None, libc::ENOENT, "codex"), None);
+        assert_eq!(
+            executable_path(Some("/live/codex"), 0, "/old/codex").as_deref(),
+            Some("/live/codex")
+        );
+    }
+
+    #[test]
+    fn recognizes_all_providers_without_counting_one_shot_or_server_modes() {
+        for (name, provider) in [
+            ("kimi", Provider::Kimi),
+            ("kimi-code", Provider::Kimi),
+            ("qwen", Provider::Qwen),
+            ("gemini", Provider::Gemini),
+            ("grok", Provider::Grok),
+        ] {
+            let parse = |tail: &[&str]| {
+                let args: Vec<_> = std::iter::once(name)
+                    .chain(tail.iter().copied())
+                    .map(str::to_owned)
+                    .collect();
+                classify(&format!("/bin/{name}"), &args)
+            };
+            assert_eq!(parse(&[]), Some(provider));
+            assert_eq!(parse(&["--model", "login"]), Some(provider));
+            for tail in [
+                &["login"][..],
+                &["acp"],
+                &["--prompt", "fixture"],
+                &["-pfixture"],
+                &["--help"],
+                &["--headless"],
+            ] {
+                assert_eq!(parse(tail), None, "{name}: {tail:?}");
+            }
+        }
+        let args = |s: &[&str]| s.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            classify(
+                "/bin/node",
+                &args(&["node", "/pkg/@moonshot-ai/kimi-code/cli.js"])
+            ),
+            Some(Provider::Kimi)
+        );
+        assert_eq!(
+            classify("/bin/node", &args(&["kimi-code"])),
+            Some(Provider::Kimi)
+        );
+        assert_eq!(
+            classify(
+                "/bin/node",
+                &args(&[
+                    "node",
+                    "/pkg/@google/gemini-cli/index.js",
+                    "--prompt",
+                    "fixture"
+                ])
+            ),
+            None
+        );
+        assert_eq!(
+            classify(
+                "/bin/node",
+                &args(&["node", "/pkg/@qwen-code/qwen-code/cli.js"])
+            ),
+            Some(Provider::Qwen)
+        );
+        assert_eq!(
+            classify("/bin/node", &args(&["node", "/unrelated/gemini.js"])),
+            None
+        );
+        assert_eq!(classify("/bin/vim", &args(&["codex"])), None);
+    }
+
     #[test]
     fn keeps_independent_instances_but_excludes_helpers_and_piped_commands() {
         let mut piped = agent(4, 0);

@@ -1,7 +1,6 @@
 # AI Session Hub
 
-Personal macOS Rust CLI/TUI for finding already running interactive Codex and
-Claude agents in existing iTerm2 panes and returning to the exact pane. Users
+Personal macOS Rust CLI/TUI for finding already running interactive Codex, Claude, Kimi, Qwen, Gemini and Grok agents in existing iTerm2 panes and returning to the exact pane. Users
 keep normal launch commands. AI Session Hub never types into panes or starts,
 resumes, stops, or changes agent processes.
 
@@ -17,7 +16,16 @@ configuration override was supplied; existing AI Session Hub settings always win
 binaries and profile blocks can be removed after the new installation is verified.
 
 The descriptive name makes the purpose discoverable in public repositories.
-The product spans agent providers; current support remains Codex and Claude.
+The product spans agent providers; discovery and exact-pane Jump support Codex, Claude, Kimi, Qwen, Gemini and Grok.
+The `embedded` build feature retains the read-only core without standalone Jump
+usage logging, allowing reviewed source reuse by AI Fleet.
+Terminal activity and transcript parsing remain verified only for Codex and Claude;
+other providers remain explicitly Unknown rather than borrowing those grammars.
+A CLI update may unlink a running executable. Only an ENOENT path lookup may
+fall back to the kernel-recorded absolute launch executable; permission failures
+stay unavailable. UID, PID/start, stdin TTY and ancestry checks remain required.
+Runtime CLIs include known package entrypoints and rewritten provider process
+titles. One-shot prompts, auth commands and servers are excluded from Agents.
 A Swift app or AI-Fleet integration is exploratory, not part of this rename.
 
 ## Sessions and navigation

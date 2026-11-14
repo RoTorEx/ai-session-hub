@@ -87,6 +87,7 @@ pub fn read(sessions: &[&Session]) -> HashMap<String, Metadata> {
                     (path, first["payload"]["id"].as_str()?.to_owned())
                 }
                 Provider::Claude => claude_binding(s, &claude_root)?,
+                _ => return None,
             };
             let text = tail(&binding.0)?;
             Some((s.id.clone(), parse(&text, s.provider, &binding.1)))
@@ -164,6 +165,9 @@ fn text(v: &Value) -> Option<String> {
 }
 pub fn parse(source: &str, provider: Provider, session_id: &str) -> Metadata {
     let mut result = Metadata::default();
+    if !matches!(provider, Provider::Codex | Provider::Claude) {
+        return result;
+    }
     for line in source.lines() {
         let Ok(v) = serde_json::from_str::<Value>(line) else {
             continue;
@@ -231,6 +235,7 @@ pub fn parse(source: &str, provider: Provider, session_id: &str) -> Metadata {
                     },
                 )
             }
+            _ => continue,
         };
         if request.is_some() || message.is_some() {
             result.updated_at = time.or(result.updated_at);

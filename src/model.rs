@@ -180,6 +180,13 @@ pub fn validate(selected: &Session) -> Result<&Pane> {
     Ok(pane)
 }
 
+// Embedded readers keep their own lifecycle and must not write standalone usage logs.
+#[cfg(feature = "embedded")]
+pub fn jump_with(selected: &Session, terminal: &mut iterm::Client) -> Result<()> {
+    terminal.jump(validate(selected)?)
+}
+
+#[cfg(not(feature = "embedded"))]
 pub fn jump_with(selected: &Session, terminal: &mut iterm::Client) -> Result<()> {
     let operation = crate::usage::Operation::start("session_jump");
     let pane = match validate(selected) {

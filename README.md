@@ -1,6 +1,6 @@
 # AI Session Hub
 
-A local Rust CLI/TUI for viewing already running interactive Codex and Claude
+A local Rust CLI/TUI for viewing already running interactive Codex, Claude, Kimi, Qwen, Gemini and Grok
 agents in iTerm2 and jumping to the exact existing pane. The normal way of
 launching agents does not change. AI Session Hub types nothing into panes and does not
 control agent processes.
@@ -83,7 +83,7 @@ Without an interactive terminal, running with no arguments prints help.
 help/version/setup-config/themes/theme do not require a running iTerm2. Errors
 produce a nonzero exit code; diagnostics go to stderr, JSON only to stdout.
 
-In JSON, `id` is the PID and start time of the instance, `provider` is codex/claude,
+In JSON, `id` is the PID and start time of the instance, `provider` identifies the discovered CLI,
 `cwd` is the actual directory, `project` is the Git worktree root or the directory,
 `status` is Live. `location` contains the pane UUID, TTY, window and zero-based
 tab/pane numbers; for an unconfirmed link it is null and the reason is in `link_reason`.
@@ -259,9 +259,11 @@ Details previews at most three wrapped lines per request/answer; History selects
 iterations and Content displays their full retained text. This is not a full conversation archive. AI Session Hub does not store or
 send content anywhere; reading does not affect the safety of Jump identification.
 
-Local regular iTerm2 panes and interactive Codex/Claude are supported.
+Local regular iTerm2 panes support discovery and exact Jump for interactive
+Codex, Claude, Kimi, Qwen, Gemini and Grok. Activity/transcript parsing is verified
+only for Codex and Claude; other providers show Unknown activity.
 Noninteractive exec/print, helper processes and a shell after the agent exits
-are not sessions. SSH, tmux, other terminals and additional providers
+are not sessions. SSH, tmux and other terminals
 are not supported; unconfirmed candidates may be shown as Unlinked.
 
 Detection requires available process metadata and stdin attached to

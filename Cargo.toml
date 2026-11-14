@@ -6,6 +6,9 @@ description = "Find live Codex and Claude sessions and jump to their iTerm2 pane
 license = "MIT"
 repository = "https://github.com/RoTorEx/ai-session-hub"
 
+[features]
+embedded = []
+
 [dependencies]
 fs2 = "0.4"
 anyhow = "1"

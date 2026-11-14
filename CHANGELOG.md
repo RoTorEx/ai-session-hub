@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Retain live interactive sessions after CLI updates unlink their executable; use the kernel launch path only for ENOENT and preserve identity/TTY checks.
+- Discover Kimi, Qwen, Gemini and Grok native/runtime sessions, including rewritten Node process titles; exclude prompt/auth/server modes and retain Unknown activity until its grammar is verified.
+
 ## [0.3.3] - 2026-10-31
 
 - Add bounded, metadata-only local product usage evidence; preserve business and recovery state.

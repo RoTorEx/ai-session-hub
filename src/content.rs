@@ -45,6 +45,14 @@ fn clean(line: &str) -> String {
 }
 
 pub fn parse(text: &str, provider: Provider) -> Content {
+    // Discovery/Jump support does not imply a verified terminal-state grammar.
+    if !matches!(provider, Provider::Codex | Provider::Claude) {
+        return Content {
+            state: "Live · activity unknown",
+            context: text.chars().take(8192).collect(),
+            ..Content::default()
+        };
+    }
     let lines: Vec<_> = text.lines().map(clean).collect();
     let tail = lines
         .iter()
@@ -177,6 +185,22 @@ fn push(messages: &mut Vec<Message>, mut message: Message) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn new_provider_screens_cannot_borrow_codex_or_claude_activity() {
+        for provider in [
+            Provider::Kimi,
+            Provider::Qwen,
+            Provider::Gemini,
+            Provider::Grok,
+        ] {
+            let content = parse(
+                "• old quoted answer\ncontext left\nesc to interrupt",
+                provider,
+            );
+            assert_eq!(content.state, "Live · activity unknown");
+            assert!(content.messages.is_empty());
+        }
+    }
     #[test]
     fn reads_visible_turns_actions_and_status_without_treating_draft_as_request() {
         let c = parse(

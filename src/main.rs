@@ -103,7 +103,7 @@ fn run(args: Args) -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&sessions)?);
             } else {
                 if sessions.is_empty() {
-                    println!("No live Codex/Claude sessions");
+                    println!("No live provider sessions");
                 }
                 for s in sessions {
                     println!(
