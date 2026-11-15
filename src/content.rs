@@ -46,6 +46,12 @@ fn clean(line: &str) -> String {
 
 pub fn parse(text: &str, provider: Provider) -> Content {
     // Discovery/Jump support does not imply a verified terminal-state grammar.
+    if provider == Provider::Kimi {
+        return Content {
+            state: kimi_state(text),
+            ..Content::default()
+        };
+    }
     if !matches!(provider, Provider::Codex | Provider::Claude) {
         return Content {
             state: "Live · activity unknown",
@@ -167,6 +173,80 @@ pub fn parse(text: &str, provider: Provider) -> Content {
         reasoning: metadata(text, "reasoning").or_else(|| metadata(text, "effort")),
     }
 }
+/// Kimi Code 0.39.x: chrome is distinct from response text and thinking configuration.
+fn kimi_state(text: &str) -> &'static str {
+    let lines: Vec<_> = text
+        .lines()
+        .rev()
+        .take(24)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .map(str::trim)
+        .collect();
+    let choice = |line: &str| {
+        let line = line.trim_start_matches(['❯', '●', '○', ' ']);
+        let line =
+            line.trim_start_matches(|c: char| c.is_ascii_digit() || matches!(c, '.' | ')' | ' '));
+        matches!(
+            line,
+            "Approve once" | "Approve for this session" | "Reject" | "Reject with feedback"
+        )
+    };
+    if lines.iter().filter(|line| choice(line)).count() >= 2 {
+        return "Needs approval";
+    }
+    let border =
+        |line: &&str| line.chars().count() >= 8 && line.chars().all(|c| matches!(c, '─' | '━'));
+    let borders: Vec<_> = lines
+        .iter()
+        .enumerate()
+        .filter(|(_, line)| border(line))
+        .map(|(index, _)| index)
+        .collect();
+    let Some(&bottom) = borders.last() else {
+        return "Live · activity unknown";
+    };
+    let Some(&top) = borders.iter().rev().nth(1) else {
+        return "Live · activity unknown";
+    };
+    // Require the actual editor frame and the model/mode footer below it.
+    // A prose quote or a model's configured thinking effort is not live work.
+    let chrome = bottom - top <= 8
+        && lines[bottom + 1..].iter().any(|line| {
+            line.contains(" thinking")
+                || line
+                    .split_whitespace()
+                    .next()
+                    .is_some_and(|s| matches!(s, "auto" | "yolo" | "plan" | "swarm" | "tower"))
+        });
+    if !chrome {
+        return "Live · activity unknown";
+    }
+    let active = lines[..top].iter().any(|line| {
+        let mut chars = line.chars();
+        let Some(first) = chars.next() else {
+            return false;
+        };
+        let tail = chars.as_str().trim_start_matches('\u{fe0f}');
+        let separated = tail.is_empty() || tail.starts_with(char::is_whitespace);
+        if !separated {
+            return false;
+        }
+        if "🌑🌒🌓🌔🌕🌖🌗🌘".contains(first) {
+            return true;
+        }
+        "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏".contains(first)
+            && (tail.trim_start().starts_with("thinking...")
+                || tail.trim_start().starts_with("working..."))
+    });
+    if active {
+        "Working"
+    } else {
+        "Live · activity unknown"
+    }
+}
+
 fn metadata(text: &str, label: &str) -> Option<String> {
     text.lines().find_map(|line| {
         let line = line.trim().trim_matches(['│', ' ']);
@@ -185,6 +265,47 @@ fn push(messages: &mut Vec<Message>, mut message: Message) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn kimi_uses_its_own_active_chrome_and_does_not_confuse_thinking_configuration() {
+        let screen = |body: &str| {
+            format!(
+                "{body}\n────────────────────\n  draft\n────────────────────\nauto K2.8 Preview thinking: high\n"
+            )
+        };
+        for spinner in ["🌑", "🌒", "🌘", "⠋ thinking...", "⠹ working..."] {
+            assert_eq!(parse(&screen(spinner), Provider::Kimi).state, "Working");
+        }
+        assert_eq!(
+            parse(&screen("✓ Finished"), Provider::Kimi).state,
+            "Live · activity unknown"
+        );
+        assert_eq!(
+            parse(&screen("quoted 🌑 work\n> ⠋ thinking..."), Provider::Kimi).state,
+            "Live · activity unknown"
+        );
+        assert_eq!(
+            parse("🌑\nno editor", Provider::Kimi).state,
+            "Live · activity unknown"
+        );
+        assert_eq!(
+            parse("unrecognized output", Provider::Kimi).state,
+            "Live · activity unknown"
+        );
+        assert_eq!(
+            parse(
+                &screen("🌑\n❯ Approve once\n  Approve for this session\n  Reject"),
+                Provider::Kimi
+            )
+            .state,
+            "Needs approval"
+        );
+        let content = parse(&screen("🌑"), Provider::Kimi);
+        assert!(
+            content.messages.is_empty(),
+            "State evidence cannot invent a transcript"
+        );
+    }
+
     #[test]
     fn new_provider_screens_cannot_borrow_codex_or_claude_activity() {
         for provider in [

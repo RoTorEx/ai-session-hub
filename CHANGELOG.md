@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Recognize Kimi Code moon/braille Working indicators and explicit approval choices using its own editor/footer grammar; absent markers and thinking configuration never imply Idle or Working.
+
 - Retain live interactive sessions after CLI updates unlink their executable; use the kernel launch path only for ENOENT and preserve identity/TTY checks.
 - Discover Kimi, Qwen, Gemini and Grok native/runtime sessions, including rewritten Node process titles; exclude prompt/auth/server modes and retain Unknown activity until its grammar is verified.
 

@@ -260,8 +260,9 @@ iterations and Content displays their full retained text. This is not a full con
 send content anywhere; reading does not affect the safety of Jump identification.
 
 Local regular iTerm2 panes support discovery and exact Jump for interactive
-Codex, Claude, Kimi, Qwen, Gemini and Grok. Activity/transcript parsing is verified
-only for Codex and Claude; other providers show Unknown activity.
+Codex, Claude, Kimi, Qwen, Gemini and Grok. Transcript parsing is verified
+only for Codex and Claude. Kimi activity recognizes its native busy and approval
+markers; absent markers remain Unknown. Other providers show Unknown activity.
 Noninteractive exec/print, helper processes and a shell after the agent exits
 are not sessions. SSH, tmux and other terminals
 are not supported; unconfirmed candidates may be shown as Unlinked.

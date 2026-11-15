@@ -19,8 +19,11 @@ The descriptive name makes the purpose discoverable in public repositories.
 The product spans agent providers; discovery and exact-pane Jump support Codex, Claude, Kimi, Qwen, Gemini and Grok.
 The `embedded` build feature retains the read-only core without standalone Jump
 usage logging, allowing reviewed source reuse by AI Fleet.
-Terminal activity and transcript parsing remain verified only for Codex and Claude;
-other providers remain explicitly Unknown rather than borrowing those grammars.
+Transcript parsing remains verified only for Codex and Claude. Kimi Code 0.39.x
+activity recognizes its own moon/braille busy indicators within the editor/footer
+chrome and explicit approval choices. Missing or offscreen markers stay Unknown,
+never inferred Idle; configured thinking effort is not work. Qwen, Gemini and
+Grok remain explicitly Unknown rather than borrowing other providers’ grammars.
 A CLI update may unlink a running executable. Only an ENOENT path lookup may
 fall back to the kernel-recorded absolute launch executable; permission failures
 stay unavailable. UID, PID/start, stdin TTY and ancestry checks remain required.
