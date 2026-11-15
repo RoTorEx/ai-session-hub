@@ -196,8 +196,12 @@ fn kimi_state(text: &str) -> &'static str {
     if lines.iter().filter(|line| choice(line)).count() >= 2 {
         return "Needs approval";
     }
-    let border =
-        |line: &&str| line.chars().count() >= 8 && line.chars().all(|c| matches!(c, '─' | '━'));
+    let border = |line: &&str| {
+        line.chars().count() >= 8
+            && line
+                .chars()
+                .all(|c| matches!(c, '─' | '━' | '╭' | '╮' | '╰' | '╯' | '┌' | '┐' | '└' | '┘'))
+    };
     let borders: Vec<_> = lines
         .iter()
         .enumerate()
@@ -269,7 +273,7 @@ mod tests {
     fn kimi_uses_its_own_active_chrome_and_does_not_confuse_thinking_configuration() {
         let screen = |body: &str| {
             format!(
-                "{body}\n────────────────────\n  draft\n────────────────────\nauto K2.8 Preview thinking: high\n"
+                "{body}\n╭──────────────────╮\n  draft\n╰──────────────────╯\nauto K2.8 Preview thinking: high\n"
             )
         };
         for spinner in ["🌑", "🌒", "🌘", "⠋ thinking...", "⠹ working..."] {
