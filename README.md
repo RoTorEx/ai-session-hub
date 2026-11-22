@@ -1,5 +1,11 @@
 # AI Session Hub
 
+> **Deprecated.** This project is no longer developed and gets no further fixes
+> or releases. Session discovery, exact-pane Jump and activity reading continue
+> in [AI Fleet](https://github.com/RoTorEx/ai-fleet), which owns its own session
+> engine and takes no code from this repository. The CLI/TUI below still builds
+> and runs as it is.
+
 A local Rust CLI/TUI for viewing already running interactive Codex, Claude, Kimi, Qwen, Gemini and Grok
 agents in iTerm2 and jumping to the exact existing pane. The normal way of
 launching agents does not change. AI Session Hub types nothing into panes and does not
