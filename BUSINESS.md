@@ -182,6 +182,20 @@ agent response and a final question are heuristics, evaluated only while Idle, w
 Old responses before the latest submitted request are excluded. Unsupported or
 missing markers mean unknown, not idle or successful task completion.
 
+Codex also reports its status in the terminal title, read in the same pass as the
+screen: a braille spinner while a turn runs, `Action Required` while it waits for
+the user. The title outranks screen markers except a recognized approval screen,
+because Codex hides its status line while a message streams mid-turn (that frame
+looked Idle and produced a false New reply) and keeps `Working` on screen while a
+question is queued. `Action Required` without another signal is a Question. A
+title without either mark changes nothing.
+
+When a session has a bound transcript, its latest agent message is the reply
+evidence instead of the visible one. The status sample is 24 rows, so the marker
+that opens any longer reply is above it; judged from the screen alone, such a
+reply never became New reply and a question closing it was missed. Without a
+bound transcript the visible response is used as before.
+
 Opening is observed only when iTerm2 is frontmost and the exact linked pane is
 active at a status sample, or after a successful identity-validated Jump. An initial idle session also becomes
 Opened after a confirmed visit, even when its earlier response history is unknown.

@@ -29,7 +29,9 @@ function operate(argv) {
     }
     if (argv[0] === 'observe') {
         const panes=JSON.parse(argv[1]);
-        const texts=panes.map(function(p) {
+        const titles=[];
+        const texts=panes.map(function(p, i) {
+            titles[i]=null;
             try {
                 let s;
                 try {
@@ -42,6 +44,8 @@ function operate(argv) {
                     if (s.tty() !== p.tty) return null;
                 }
                 if (Number(variable(s,'pid')) !== p.root_pid) return null;
+                // Read with the screen it describes; the pane list's name can be older.
+                try { titles[i]=s.name(); } catch (_) {}
                 // Only the currently visible screen, bounded to its final 24
                 // rows; no archived/full conversation reads for status polling.
                 return Array.from(s.contents().split('\n').slice(-24).join('\n')).slice(-8192).join('');
@@ -49,7 +53,7 @@ function operate(argv) {
         });
         let focused=null;
         try { if (app.frontmost()) focused=app.currentWindow().currentSession().id(); } catch (_) {}
-        return JSON.stringify({texts:texts,focused:focused});
+        return JSON.stringify({texts:texts,titles:titles,focused:focused});
     }
     if (argv[0] === 'jump' || argv[0] === 'content') {
         const p=resolve(argv[1]), s=p.s;

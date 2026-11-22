@@ -50,11 +50,7 @@ impl Observation {
             .rev()
             .take_while(|m| m.role != Role::You)
             .find(|m| m.role == Role::Agent);
-        let answer = message.map(|m| {
-            let mut h = DefaultHasher::new();
-            m.text.split_whitespace().collect::<Vec<_>>().hash(&mut h);
-            h.finish()
-        });
+        let answer = message.map(|m| answer_hash(&m.text));
         let attention = if state == State::Idle {
             message.map_or(Attention::None, |m| attention(&m.text))
         } else {
@@ -75,6 +71,45 @@ impl Observation {
             last_message: message.map(|m| m.text.clone()),
         }
     }
+    /// The bound transcript's latest agent message replaces the visible one. The screen sample
+    /// is 24 rows, so the marker of any longer reply is above it: such a reply was never seen
+    /// as new, and a question closing it was missed.
+    pub fn with_transcript(mut self, message: Option<&str>) -> Self {
+        if let Some(message) = message {
+            self.answer = Some(answer_hash(message));
+            if self.state == State::Idle {
+                self.attention = attention(message);
+            }
+        }
+        self
+    }
+    /// Codex writes its own status into the terminal title: a braille spinner while a turn
+    /// runs, "Action Required" while it waits for the user. Screen markers misread both: the
+    /// status line is hidden while a message streams mid-turn, and a queued question leaves
+    /// "Working" on screen. A recognized approval screen keeps priority.
+    pub fn with_title(mut self, title: Option<&str>, provider: process::Provider) -> Self {
+        let Some(title) = title.map(str::trim_start) else {
+            return self;
+        };
+        if provider != process::Provider::Codex || self.state == State::Approval {
+            return self;
+        }
+        if title.starts_with(|c| ('\u{2800}'..='\u{28ff}').contains(&c)) {
+            self.state = State::Working;
+            self.attention = Attention::None;
+        } else if title.starts_with('[') && title.contains("Action Required") {
+            self.state = State::Idle;
+            if self.attention == Attention::None {
+                self.attention = Attention::Question;
+            }
+        }
+        self
+    }
+}
+fn answer_hash(text: &str) -> u64 {
+    let mut h = DefaultHasher::new();
+    text.split_whitespace().collect::<Vec<_>>().hash(&mut h);
+    h.finish()
 }
 fn attention(text: &str) -> Attention {
     let text = text.to_lowercase();
@@ -286,14 +321,21 @@ pub fn read(sessions: &[Session], terminal: &mut iterm::Client) -> Result<Snapsh
     let sessions = sessions
         .iter()
         .map(|s| {
-            let text = valid
-                .iter()
-                .position(|v| v.id == s.id)
+            let index = valid.iter().position(|v| v.id == s.id);
+            let text = index
                 .and_then(|i| observed.texts.get(i))
+                .and_then(|s| s.as_deref());
+            let title = index
+                .and_then(|i| observed.titles.get(i))
                 .and_then(|s| s.as_deref());
             (
                 s.id.clone(),
-                text.map(|text| Observation::parse(text, s.provider)),
+                text.map(|text| {
+                    let message = metadata.get(&s.id).and_then(|m| m.last_message.as_deref());
+                    Observation::parse(text, s.provider)
+                        .with_transcript(message)
+                        .with_title(title, s.provider)
+                }),
             )
         })
         .collect();
@@ -403,6 +445,82 @@ mod tests {
         assert_eq!(
             Observation::parse("plain output", process::Provider::Claude).state,
             State::Unknown
+        );
+    }
+    #[test]
+    fn transcript_reply_counts_when_its_marker_is_above_the_sampled_rows() {
+        let claude = process::Provider::Claude;
+        // The tail of a long reply: no reply marker within the sampled rows.
+        let working = "3. third point\n\n✻ Cooking… (esc to interrupt)\n❯\n⏵⏵ auto mode on (shift+tab to cycle)";
+        let idle =
+            "3. third point\n\nShould I continue?\n\n❯\n⏵⏵ auto mode on (shift+tab to cycle)";
+        let mut p = Progress::default();
+        p.observe(Some(&Observation::parse(working, claude)), false);
+        p.observe(Some(&Observation::parse(idle, claude)), false);
+        assert_eq!(p.label(), "Untracked");
+
+        let read = |text, message| Observation::parse(text, claude).with_transcript(message);
+        let mut p = Progress::default();
+        p.observe(Some(&read(idle, Some("Old reply."))), false);
+        p.observe(Some(&read(working, None)), false);
+        p.observe(
+            Some(&read(idle, Some("1. first\n2. second\n3. third point"))),
+            false,
+        );
+        assert_eq!(p.label(), "New reply");
+        p.observe(Some(&read(working, None)), false);
+        p.observe(
+            Some(&read(idle, Some("3. third point\n\nShould I continue?"))),
+            false,
+        );
+        assert_eq!(p.label(), "Question");
+        // An interrupted turn adds no reply.
+        p.observe(Some(&read(working, None)), false);
+        p.observe(Some(&read(idle, None)), false);
+        assert_eq!(p.label(), "Untracked");
+    }
+    #[test]
+    fn codex_title_outranks_screen_markers_that_misread_a_running_turn() {
+        let codex = process::Provider::Codex;
+        // The status line is hidden while a message streams mid-turn.
+        let streaming = "› Task\n• Part of the answer\n\n› Ask Codex to do anything\n\n  ← for agents · ? for shortcuts";
+        // A queued question leaves the running status on screen.
+        let queued = "› Task\n• Now I need the drive.\n\n? Connect the drive.\n\n  • Connected\n  • Later\n\n• Working (20m 42s • esc to interrupt)\n\n• Queued follow-up inputs\n  ? 1 question\n    ⇧← to answer\n\n› Ask Codex to do anything\n\n  ← for agents · ? for shortcuts";
+        let read = |text, title| Observation::parse(text, codex).with_title(Some(title), codex);
+        assert_eq!(Observation::parse(streaming, codex).state, State::Idle);
+        assert_eq!(
+            read(streaming, "⠹ Task | project (codex)").state,
+            State::Working
+        );
+        assert_eq!(read(streaming, "Task | project (codex)").state, State::Idle);
+
+        let mut p = Progress::default();
+        p.observe(Some(&read(queued, "⠹ Task | project (codex)")), false);
+        p.observe(Some(&read(streaming, "⠹ Task | project (codex)")), false);
+        assert_eq!(p.label(), "Working");
+        p.observe(
+            Some(&read(
+                queued,
+                "[ . ] Action Required | Task | project (codex)",
+            )),
+            false,
+        );
+        assert_eq!(p.label(), "Question");
+        p.observe(Some(&read(streaming, "Task | project (codex)")), false);
+        assert_eq!(p.label(), "New reply");
+
+        let approval = "Would you like to run this command?\n  Yes, proceed";
+        assert_eq!(
+            read(approval, "[ ! ] Action Required | Task | project (codex)").state,
+            State::Approval
+        );
+        let claude = process::Provider::Claude;
+        let idle = "❯ Task\n⏺ Done.\n❯ draft\n? for shortcuts";
+        assert_eq!(
+            Observation::parse(idle, claude)
+                .with_title(Some("⠹ Task (claude)"), claude)
+                .state,
+            State::Idle
         );
     }
     #[test]

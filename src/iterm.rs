@@ -23,6 +23,9 @@ pub struct Pane {
 #[derive(Deserialize)]
 pub struct Observed {
     pub texts: Vec<Option<String>>,
+    /// Pane titles read in the same pass as `texts`.
+    #[serde(default)]
+    pub titles: Vec<Option<String>>,
     pub focused: Option<String>,
 }
 const SCRIPT: &str = include_str!("iterm.js");

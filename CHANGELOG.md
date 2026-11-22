@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Take the latest agent message from the bound transcript as reply evidence. A reply longer than the 24 sampled rows hid its opening marker, so most Claude Code replies never became New reply and a closing question was not flagged.
+- Read the Codex status from its terminal title together with the screen: a spinner keeps a turn Working while its status line is hidden during a streamed message (no more false New reply mid-turn), and `Action Required` marks a queued question as Question instead of Working.
 - Recognize an idle Claude Code session whose footer shows the permission-mode line (for example `auto mode on (shift+tab to cycle)`) instead of the shortcuts hint; such sessions no longer stay Unknown after finishing work.
 - Recognize Kimi Code moon/braille Working indicators and explicit approval choices using its own editor/footer grammar; absent markers and thinking configuration never imply Idle or Working.
 
