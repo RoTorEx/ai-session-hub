@@ -78,6 +78,8 @@ pub fn parse(text: &str, provider: Provider) -> Content {
     } else if tail.contains("context left")
         || tail.contains("? for shortcuts")
         || tail.contains("bypass permissions")
+        // Claude Code replaces the shortcuts hint with its permission-mode line.
+        || tail.contains("shift+tab to cycle")
     {
         "Waiting for input"
     } else {
@@ -351,5 +353,25 @@ mod tests {
         let c = parse("unrecognized output", Provider::Claude);
         assert_eq!(c.state, "Live · activity unknown");
         assert_eq!(c.context, "unrecognized output");
+    }
+    #[test]
+    fn claude_permission_mode_footer_is_idle_until_work_is_in_progress() {
+        let screen = |footer: &str| {
+            format!("❯ Task\n⏺ Done.\n❯ \n──────\n  user@host:repo [Model]\n  {footer}")
+        };
+        let idle = parse(
+            &screen("⏵⏵ auto mode on (shift+tab to cycle)"),
+            Provider::Claude,
+        );
+        assert_eq!(idle.state, "Waiting for input");
+        assert_eq!(idle.messages.last().unwrap().text, "Done.");
+        assert_eq!(
+            parse(
+                &screen("⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt"),
+                Provider::Claude
+            )
+            .state,
+            "Working"
+        );
     }
 }

@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Recognize an idle Claude Code session whose footer shows the permission-mode line (for example `auto mode on (shift+tab to cycle)`) instead of the shortcuts hint; such sessions no longer stay Unknown after finishing work.
 - Recognize Kimi Code moon/braille Working indicators and explicit approval choices using its own editor/footer grammar; absent markers and thinking configuration never imply Idle or Working.
 
 - Retain live interactive sessions after CLI updates unlink their executable; use the kernel launch path only for ENOENT and preserve identity/TTY checks.
