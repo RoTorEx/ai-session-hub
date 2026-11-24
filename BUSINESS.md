@@ -29,7 +29,6 @@ fall back to the kernel-recorded absolute launch executable; permission failures
 stay unavailable. UID, PID/start, stdin TTY and ancestry checks remain required.
 Runtime CLIs include known package entrypoints and rewritten provider process
 titles. One-shot prompts, auth commands and servers are excluded from Agents.
-A Swift app or AI-Fleet integration is exploratory, not part of this rename.
 
 ## Sessions and navigation
 
@@ -282,7 +281,8 @@ macOS only. Release preparation/push are separate; real release needs approval.
 ## Non-goals
 
 No tasks/Inbox, archive-wide conversation search, AI classification, notifications,
-daemon, LaunchAgent, mandatory hooks, account or AI Fleet integration. No SSH,
+daemon, LaunchAgent, mandatory hooks, account management, or standalone AI Fleet UI.
+The reviewed read-only `embedded` reuse by AI Fleet remains supported. No SSH,
 tmux, additional providers or terminals. No agent control or terminal writes.
 
 ## Code map
